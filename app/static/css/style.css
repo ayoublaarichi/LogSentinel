@@ -191,6 +191,17 @@ footer {
     background: var(--ls-text-muted);
 }
 
+/* ── IP Banner ───────────────────────────────────────────────────────────── */
+.ip-banner {
+    border-left: 3px solid var(--ls-accent) !important;
+}
+
+.ip-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
 /* ── Responsive tweaks ───────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .stat-card .card-body h2 { font-size: 1.5rem; }

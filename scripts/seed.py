@@ -19,14 +19,46 @@ sys.path.insert(0, str(project_root))
 from app.config import SAMPLE_LOGS_DIR
 
 
-def detect_device_ip() -> str:
-    """Detect the active local IPv4 address of this laptop/phone hotspot network."""
+def detect_lan_ip() -> str:
+    """Detect the active local LAN IPv4 address of this device."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.connect(("8.8.8.8", 80))
             return sock.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+def detect_wan_ip() -> str:
+    """
+    Detect the public WAN IP by querying a lightweight external service.
+    Falls back to LAN IP if offline or request fails.
+    """
+    services = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+    ]
+    try:
+        import httpx  # already in requirements.txt
+        for url in services:
+            try:
+                resp = httpx.get(url, timeout=5)
+                if resp.status_code == 200:
+                    ip = resp.text.strip()
+                    if ip:  # validate it looks like an IP
+                        return ip
+            except Exception:
+                continue
+    except ImportError:
+        pass
+    # Fallback to LAN
+    return detect_lan_ip()
+
+
+def detect_device_ip() -> str:
+    """Return the best available IP: WAN (public) with LAN fallback."""
+    return detect_wan_ip()
 
 
 def _derive_neighbor_ips(device_ip: str) -> list[str]:
@@ -165,8 +197,11 @@ def main() -> None:
     print("║   LogSentinel — Sample Log Generator         ║")
     print("╚══════════════════════════════════════════════╝")
 
-    device_ip = detect_device_ip()
-    print(f"  ✓ Detected current device IP: {device_ip}")
+    lan_ip = detect_lan_ip()
+    wan_ip = detect_wan_ip()
+    device_ip = wan_ip  # use public WAN IP for realistic external-attacker simulation
+    print(f"  ✓ LAN IP : {lan_ip}")
+    print(f"  ✓ WAN IP : {wan_ip}  ← used in sample logs")
 
     # Generate auth.log dynamically
     auth_content = generate_auth_log(device_ip)

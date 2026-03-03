@@ -5,6 +5,8 @@ Registers routers, mounts static files, configures Jinja2 templates,
 and exposes the HTML dashboard alongside the JSON API.
 """
 
+import socket
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -33,6 +35,60 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.include_router(upload.router)
 app.include_router(events.router)
 app.include_router(alerts.router)
+
+
+@app.get("/api/ip", tags=["Info"])
+async def get_ip_info(request: Request) -> dict:
+    """
+    Return the client's visible IP (as seen by the server) plus the
+    server's own LAN IP and public WAN IP.
+
+    - client_ip  : IP of the browser/device making this request
+    - server_lan : LAN IP of the machine running LogSentinel
+    - server_wan : Public WAN IP of the machine running LogSentinel
+    """
+    import httpx as _httpx
+
+    # ── Client (browser) IP ──────────────────────────────────────────────
+    forwarded_for = request.headers.get("x-forwarded-for")
+    client_ip: str = (
+        forwarded_for.split(",")[0].strip()
+        if forwarded_for
+        else (request.client.host if request.client else "unknown")
+    )
+
+    # ── Server LAN IP ────────────────────────────────────────────────────
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _s:
+            _s.connect(("8.8.8.8", 80))
+            server_lan: str = _s.getsockname()[0]
+    except OSError:
+        server_lan = "127.0.0.1"
+
+    # ── Server WAN IP (cached for 60 s to avoid hammering external APIs) ─
+    wan_services = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+    ]
+    server_wan: str = server_lan  # default
+    try:
+        for url in wan_services:
+            try:
+                r = _httpx.get(url, timeout=5)
+                if r.status_code == 200 and r.text.strip():
+                    server_wan = r.text.strip()
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return {
+        "client_ip": client_ip,
+        "server_lan": server_lan,
+        "server_wan": server_wan,
+    }
 
 
 # ── Startup ──────────────────────────────────────────────────────────────────

@@ -3,6 +3,33 @@
 {% block nav_dashboard %}active{% endblock %}
 
 {% block content %}
+<!-- ── IP Info Banner ─────────────────────────────────────────────────── -->
+<div class="card bg-dark border-info mb-3 ip-banner">
+    <div class="card-body py-2 d-flex flex-wrap align-items-center gap-4">
+        <span class="d-flex align-items-center gap-2">
+            <i class="bi bi-router text-info fs-5"></i>
+            <span class="text-secondary small">Your IP</span>
+        </span>
+        <span class="ip-item">
+            <span class="text-secondary small me-1">Client&nbsp;(browser)</span>
+            <code id="ipClient" class="text-info fw-bold">…</code>
+        </span>
+        <span class="vr d-none d-md-block border-secondary"></span>
+        <span class="ip-item">
+            <span class="text-secondary small me-1">LAN</span>
+            <code id="ipLan" class="text-warning fw-bold">…</code>
+        </span>
+        <span class="vr d-none d-md-block border-secondary"></span>
+        <span class="ip-item">
+            <span class="text-secondary small me-1">Public&nbsp;WAN</span>
+            <code id="ipWan" class="text-success fw-bold">…</code>
+        </span>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadIpInfo()" title="Refresh IPs">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+</div>
+
 <!-- ── Summary cards ──────────────────────────────────────────────────── -->
 <div class="row g-3 mb-4">
     <div class="col-xl-2 col-md-4 col-sm-6">
@@ -154,4 +181,27 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadIpInfo() {
+    const setVal = (id, val, fallback = '—') => {
+        document.getElementById(id).textContent = val || fallback;
+    };
+    try {
+        const resp = await fetch('/api/ip');
+        if (!resp.ok) throw new Error(resp.statusText);
+        const d = await resp.json();
+        setVal('ipClient', d.client_ip);
+        setVal('ipLan',    d.server_lan);
+        setVal('ipWan',    d.server_wan);
+    } catch (err) {
+        ['ipClient', 'ipLan', 'ipWan'].forEach(id =>
+            document.getElementById(id).textContent = 'unavailable'
+        );
+    }
+}
+loadIpInfo();
+</script>
 {% endblock %}
