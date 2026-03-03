@@ -1,0 +1,297 @@
+/**
+ * events-app.js — Main state manager for the Events Investigation page.
+ *
+ * Architecture:
+ *   App (singleton)
+ *   ├── FilterBar   — structured query chips, emits filtered chips
+ *   ├── EventTable  — virtual-scroll table, emits row:select
+ *   ├── EventDetails— tree panel, handles actions
+ *   ├── RawLogViewer— raw log syntax highlighter
+ *   └── TimelineChart — Chart.js timeline
+ *
+ * State:
+ *   allEvents[]     — full dataset loaded from API (up to 10 000)
+ *   filteredEvents[]— after applying chips
+ *   selectedEvent   — currently selected event object
+ */
+
+import FilterBar     from './components/FilterBar.js';
+import EventTable    from './components/EventTable.js';
+import EventDetails  from './components/EventDetails.js';
+import RawLogViewer  from './components/RawLogViewer.js';
+import TimelineChart from './components/TimelineChart.js';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════════════════════════════ */
+const state = {
+    allEvents:      [],
+    filteredEvents: [],
+    selectedEvent:  null,
+    chips:          [],
+    loading:        false,
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Component instances
+   ═══════════════════════════════════════════════════════════════════════════ */
+let filterBar, eventTable, eventDetails, rawViewer, timeline;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Boot
+   ═══════════════════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', async () => {
+    initComponents();
+    await loadData();
+    timeline.load(24);
+});
+
+function initComponents() {
+    /* FilterBar */
+    filterBar = new FilterBar('#ls-filterbar', {
+        onFilter: chips => {
+            state.chips = chips;
+            applyFilters();
+        },
+    });
+
+    /* EventTable */
+    eventTable = new EventTable('#ls-table-pane', {
+        onSelect: ev => onRowSelect(ev),
+        onCtxMenu: (ev, x, y) => onTableCtxMenu(ev, x, y),
+    });
+
+    /* EventDetails */
+    eventDetails = new EventDetails('#ls-event-details', {
+        onAction: (key, ev, extra) => onDetailAction(key, ev, extra),
+    });
+
+    /* RawLogViewer */
+    rawViewer = new RawLogViewer('#ls-raw-pane');
+
+    /* TimelineChart */
+    timeline = new TimelineChart('timelineCanvas');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Data loading
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function loadData() {
+    setLoading(true);
+    try {
+        const [events, ips, types, users] = await Promise.all([
+            apiFetch('/api/events/bulk?limit=5000'),
+            apiFetch('/api/events/ips'),
+            apiFetch('/api/events/types'),
+            apiFetch('/api/events/users'),
+        ]);
+
+        // Enrich events with computed severity + matched rule
+        state.allEvents = events.map(enrichEvent);
+
+        // Provide autocomplete hints to filter bar
+        filterBar.setHints({ ips, types, users });
+
+        applyFilters();
+        toast(`Loaded ${events.length.toLocaleString()} events`, 'info');
+    } catch (err) {
+        toast(`Failed to load events: ${err.message}`, 'error');
+        console.error('[events-app]', err);
+    } finally {
+        setLoading(false);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Filtering
+   ═══════════════════════════════════════════════════════════════════════════ */
+function applyFilters() {
+    const chips = state.chips;
+    if (!chips.length) {
+        state.filteredEvents = [...state.allEvents];
+    } else {
+        state.filteredEvents = state.allEvents.filter(ev => matchChips(ev, chips));
+    }
+    eventTable.setData(state.filteredEvents);
+
+    // If selected event is still in filtered set, keep selection
+    if (state.selectedEvent) {
+        const idx = state.filteredEvents.findIndex(e => e.id === state.selectedEvent.id);
+        if (idx >= 0) eventTable.selectIndex(idx);
+        else {
+            eventDetails.clear();
+            rawViewer.clear();
+            state.selectedEvent = null;
+        }
+    }
+}
+
+function matchChips(ev, chips) {
+    return chips.every(chip => {
+        const v = chip.value.toLowerCase();
+        switch (chip.field) {
+            case 'ip':       return (ev.source_ip   || '').toLowerCase().includes(v);
+            case 'type':     return (ev.event_type  || '').toLowerCase().includes(v);
+            case 'user':     return (ev.username    || '').toLowerCase().includes(v);
+            case 'source':   return (ev.log_source  || '').toLowerCase() === v;
+            case 'severity': return (ev._severity   || '').toLowerCase() === v;
+            case 'rule':     return (ev._rule       || '').toLowerCase().includes(v);
+            case 'text':     return JSON.stringify(ev).toLowerCase().includes(v);
+            default:         return true;
+        }
+    });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Event enrichment — adds _severity and _rule from known patterns
+   ═══════════════════════════════════════════════════════════════════════════ */
+const SEVERITY_MAP = {
+    ssh_failed:              'high',
+    ssh_brute_force:         'critical',
+    invalid_user:            'medium',
+    http_server_error:       'high',
+    http_client_error:       'low',
+    ssh_closed:              'info',
+    ssh_accepted:            'info',
+    http_ok:                 'info',
+};
+
+const RULE_MAP = {
+    ssh_failed:        'SSH Brute Force (candidate)',
+    ssh_brute_force:   'SSH Brute Force',
+    invalid_user:      'Invalid User Login',
+    http_server_error: 'Nginx Server Error',
+    http_client_error: 'Nginx Client Error',
+};
+
+function enrichEvent(ev) {
+    const et = (ev.event_type || '').toLowerCase();
+    const sev = SEVERITY_MAP[et] || 'none';
+    const rule = RULE_MAP[et] || null;
+    return {
+        ...ev,
+        _severity: sev,
+        _rule: rule,
+        _reason: rule ? `Event type "${ev.event_type}" matched rule "${rule}"` : null,
+    };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Row selection
+   ═══════════════════════════════════════════════════════════════════════════ */
+function onRowSelect(ev) {
+    state.selectedEvent = ev;
+    eventDetails.show(ev);
+    rawViewer.show(ev);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Table context menu
+   ═══════════════════════════════════════════════════════════════════════════ */
+function onTableCtxMenu(ev, x, y) {
+    document.querySelector('.ls-ctx-menu')?.remove();
+    const menu = document.createElement('div');
+    menu.className = 'ls-ctx-menu';
+    menu.style.left = `${x}px`;
+    menu.style.top  = `${y}px`;
+    menu.innerHTML = `
+        <div class="ls-ctx-item" data-action="filter_ip">
+            <i class="bi bi-funnel"></i> Filter by IP: ${esc(ev.source_ip)}
+        </div>
+        <div class="ls-ctx-item" data-action="filter_type">
+            <i class="bi bi-tag"></i> Filter by Type: ${esc(ev.event_type)}
+        </div>
+        ${ev.username ? `<div class="ls-ctx-item" data-action="filter_user">
+            <i class="bi bi-person"></i> Filter by User: ${esc(ev.username)}
+        </div>` : ''}
+        <div class="ls-ctx-divider"></div>
+        <div class="ls-ctx-item" data-action="pivot_ip">
+            <i class="bi bi-diagram-3"></i> Show all events for this IP
+        </div>
+        <div class="ls-ctx-item" data-action="copy_raw">
+            <i class="bi bi-clipboard"></i> Copy raw line
+        </div>
+    `;
+    document.body.appendChild(menu);
+    menu.querySelectorAll('.ls-ctx-item').forEach(item => {
+        item.addEventListener('click', () => {
+            onDetailAction(item.dataset.action, ev);
+            menu.remove();
+        });
+    });
+    const dismiss = e => {
+        if (!menu.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('mousedown', dismiss);
+        }
+    };
+    setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Detail/action handler
+   ═══════════════════════════════════════════════════════════════════════════ */
+function onDetailAction(key, ev, extra = {}) {
+    switch (key) {
+        case 'filter_ip':
+        case 'filter':
+            if (ev.source_ip) filterBar.addChip('ip', ev.source_ip);
+            else if (extra.key === 'source_ip' && extra.value) filterBar.addChip('ip', extra.value);
+            break;
+        case 'filter_type':
+            if (ev.event_type) filterBar.addChip('type', ev.event_type);
+            break;
+        case 'filter_user':
+            if (ev.username) filterBar.addChip('user', ev.username);
+            break;
+        case 'pivot_ip':
+            filterBar.clearAll();
+            if (ev.source_ip) filterBar.addChip('ip', ev.source_ip);
+            toast(`Pivoting to IP ${ev.source_ip}`, 'info');
+            break;
+        case 'timeline_ip':
+            timeline.load(24);
+            toast(`Timeline filtered for ${ev.source_ip}`, 'info');
+            break;
+        case 'copy_raw':
+            navigator.clipboard.writeText(ev.raw_line || '').then(() => toast('Raw line copied!', 'success'));
+            break;
+        case 'copy':
+            navigator.clipboard.writeText(String(extra.value ?? '')).then(() => toast('Copied!', 'success'));
+            break;
+        case 'false_pos':
+            toast(`Marked as false positive: #${ev.id}`, 'info');
+            break;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Helpers
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function apiFetch(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return r.json();
+}
+
+function setLoading(show) {
+    state.loading = show;
+    eventTable?.setLoading(show);
+}
+
+function toast(msg, type = 'info') {
+    const area = document.getElementById('ls-toast-area');
+    if (!area) return;
+    const el = document.createElement('div');
+    el.className = `ls-toast ${type}`;
+    el.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info-circle'} me-2"></i>${msg}`;
+    area.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+
+function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* Export for potential toolbar button access from inline HTML handlers */
+window.lsApp = { filterBar: () => filterBar, reload: loadData };

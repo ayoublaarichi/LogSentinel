@@ -1,0 +1,597 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   LogSentinel — Professional Events Investigation Page
+   Inspired by Wireshark, Kibana, Splunk.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layout Shell ────────────────────────────────────────────────────────── */
+#ls-events-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 72px);   /* 56px navbar + 16px top padding */
+    gap: 0;
+    overflow: hidden;
+}
+
+/* ── Filter Bar ──────────────────────────────────────────────────────────── */
+#ls-filterbar {
+    flex-shrink: 0;
+    background: #0d1117;
+    border-bottom: 1px solid #30363d;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 10;
+}
+
+#ls-filter-input-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#ls-filter-input {
+    flex: 1;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #c9d1d9;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.82rem;
+    padding: 5px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+#ls-filter-input:focus {
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.15);
+}
+
+#ls-filter-input::placeholder { color: #484f58; }
+
+#ls-autocomplete {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.ls-ac-item {
+    padding: 6px 12px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: #c9d1d9;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.1s;
+}
+.ls-ac-item:hover, .ls-ac-item.active {
+    background: rgba(88,166,255,0.12);
+    color: #58a6ff;
+}
+.ls-ac-key  { color: #79c0ff; }
+.ls-ac-val  { color: #56d364; }
+.ls-ac-sep  { color: #484f58; }
+
+/* ── Filter chips ────────────────────────────────────────────────────────── */
+#ls-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    min-height: 22px;
+}
+
+.ls-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(88, 166, 255, 0.12);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    border-radius: 20px;
+    padding: 1px 8px 1px 10px;
+    font-size: 0.76rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: #79c0ff;
+    white-space: nowrap;
+    animation: chipIn 0.15s ease;
+}
+@keyframes chipIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to   { opacity: 1; transform: scale(1); }
+}
+.ls-chip-key  { color: #58a6ff; font-weight: 600; }
+.ls-chip-sep  { color: #484f58; }
+.ls-chip-val  { color: #79c0ff; }
+.ls-chip-rm {
+    cursor: pointer;
+    color: #484f58;
+    margin-left: 2px;
+    font-size: 0.9em;
+    line-height: 1;
+    transition: color 0.1s;
+    background: none;
+    border: none;
+    padding: 0;
+}
+.ls-chip-rm:hover { color: #f85149; }
+
+/* ── Timeline strip ──────────────────────────────────────────────────────── */
+#ls-timeline-bar {
+    flex-shrink: 0;
+    height: 90px;
+    background: #0d1117;
+    border-bottom: 1px solid #30363d;
+    padding: 4px 12px 4px;
+    position: relative;
+}
+
+#ls-timeline-bar.collapsed { height: 0; padding: 0; overflow: hidden; }
+
+#ls-timeline-toggle {
+    position: absolute;
+    top: 4px; right: 10px;
+    font-size: 0.7rem;
+    color: #484f58;
+    cursor: pointer;
+    background: none;
+    border: none;
+    transition: color 0.15s;
+}
+#ls-timeline-toggle:hover { color: #c9d1d9; }
+
+#timelineCanvas { width: 100% !important; height: 70px !important; }
+
+/* ── Workspace (table + detail) ──────────────────────────────────────────── */
+#ls-workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 390px;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── Table pane ──────────────────────────────────────────────────────────── */
+#ls-table-pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid #30363d;
+    min-height: 0;
+    background: #0d1117;
+}
+
+/* Table toolbar */
+#ls-table-toolbar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #161b22;
+    border-bottom: 1px solid #21262d;
+    font-size: 0.78rem;
+}
+
+#ls-result-info { color: #8b949e; }
+#ls-result-count { color: #58a6ff; font-weight: 600; }
+
+/* Column headers */
+#ls-col-headers {
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: var(--ls-col-widths);
+    background: #161b22;
+    border-bottom: 2px solid #21262d;
+    user-select: none;
+}
+
+.ls-col-head {
+    padding: 5px 8px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8b949e;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    position: relative;
+    transition: color 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.ls-col-head:hover { color: #c9d1d9; background: rgba(255,255,255,0.03); }
+.ls-col-head.sort-asc  .sort-arrow::after { content: ' ▲'; color: #58a6ff; }
+.ls-col-head.sort-desc .sort-arrow::after { content: ' ▼'; color: #58a6ff; }
+.ls-col-head.sort-asc,
+.ls-col-head.sort-desc { color: #58a6ff; }
+
+/* Column resize handle */
+.ls-col-resize {
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    background: transparent;
+}
+.ls-col-resize:hover { background: #30363d; }
+
+/* Virtual scroll container */
+#ls-table-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d #0d1117;
+}
+#ls-table-scroll::-webkit-scrollbar { width: 8px; }
+#ls-table-scroll::-webkit-scrollbar-track { background: #0d1117; }
+#ls-table-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+
+#ls-table-inner {
+    position: relative;
+    width: 100%;
+    /* height set by JS */
+}
+
+/* Table rows */
+.ls-row {
+    position: absolute;
+    left: 0; right: 0;
+    display: grid;
+    grid-template-columns: var(--ls-col-widths);
+    height: 34px;
+    align-items: center;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    cursor: pointer;
+    transition: background 0.06s;
+    font-size: 0.78rem;
+}
+.ls-row:hover { background: rgba(88,166,255,0.06); }
+.ls-row.selected {
+    background: rgba(88,166,255,0.14) !important;
+    border-left: 3px solid #58a6ff;
+}
+
+.ls-cell {
+    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c9d1d9;
+}
+.ls-cell-num   { color: #484f58; font-variant-numeric: tabular-nums; }
+.ls-cell-ts    { font-family: 'JetBrains Mono', monospace; font-size: 0.77rem; color: #8b949e; }
+.ls-cell-ip    { font-family: 'JetBrains Mono', monospace; color: #58a6ff; }
+.ls-cell-type  { }
+.ls-cell-user  { color: #d2a8ff; }
+.ls-cell-src   { }
+
+/* ── Severity / Wireshark color rules ────────────────────────────────────── */
+.row-critical   { background: rgba(180,  0,  0, 0.15) !important; }
+.row-high       { background: rgba(248, 81, 73, 0.11) !important; }
+.row-medium     { background: rgba(219,109, 40, 0.10) !important; }
+.row-low        { background: rgba(227,179, 65, 0.08) !important; }
+.row-info       { background: transparent !important; }
+
+.row-root       { background: rgba(210, 168, 255, 0.12) !important; }
+.row-accepted   { background: rgba(63, 185, 80, 0.09) !important; }
+.row-public-ip  { background: rgba(56, 189, 248, 0.08) !important; }
+
+/* Severity badges */
+.sev-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.sev-critical { background: #b00000; color: #fff; }
+.sev-high     { background: rgba(248,81,73,0.25); color: #f85149; border: 1px solid #f85149; }
+.sev-medium   { background: rgba(219,109,40,0.2); color: #db6d28; border: 1px solid #db6d28; }
+.sev-low      { background: rgba(227,179,65,0.15); color: #e3b341; border: 1px solid #e3b341; }
+.sev-info, .sev-none { background: rgba(139,148,158,0.15); color: #8b949e; border: 1px solid #30363d; }
+
+/* Source badge */
+.src-badge { font-size: 0.68rem; font-family: monospace; }
+.src-auth  { background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid #0ea5e9; }
+.src-nginx { background: rgba(163,230,53,0.15);  color: #84cc16; border: 1px solid #65a30d; }
+
+/* Table footer */
+#ls-table-footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+    background: #161b22;
+    border-top: 1px solid #21262d;
+    font-size: 0.76rem;
+    color: #8b949e;
+}
+
+/* ── Detail pane ─────────────────────────────────────────────────────────── */
+#ls-detail-pane {
+    display: flex;
+    flex-direction: column;
+    background: #0d1117;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* EventDetails mounts inside this — fill upper 65% */
+#ls-event-details {
+    flex: 1 1 65%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#ls-detail-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: #161b22;
+    border-bottom: 1px solid #21262d;
+    font-size: 0.8rem;
+}
+#ls-detail-header-title { color: #8b949e; font-size: 0.78rem; }
+
+/* Detail tree */
+#ls-detail-tree {
+    flex: 1 1 55%;
+    overflow-y: auto;
+    padding: 8px 0;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d #0d1117;
+}
+#ls-detail-tree::-webkit-scrollbar { width: 6px; }
+#ls-detail-tree::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+.ls-tree-section {
+    margin-bottom: 2px;
+}
+.ls-tree-section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    user-select: none;
+    transition: color 0.1s;
+}
+.ls-tree-section-head:hover { color: #c9d1d9; }
+.ls-tree-section-head .chevron { transition: transform 0.15s; font-size: 0.65em; }
+.ls-tree-section-head.collapsed .chevron { transform: rotate(-90deg); }
+.ls-tree-section-body {
+    padding: 2px 0 4px 0;
+}
+.ls-tree-section-body.hidden { display: none; }
+
+.ls-tree-row {
+    display: flex;
+    align-items: flex-start;
+    padding: 2px 12px 2px 24px;
+    gap: 0;
+    font-size: 0.77rem;
+    transition: background 0.08s;
+}
+.ls-tree-row:hover { background: rgba(255,255,255,0.03); }
+.ls-tree-key {
+    flex: 0 0 130px;
+    color: #8b949e;
+    font-family: monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ls-tree-sep { color: #484f58; padding: 0 4px; }
+.ls-tree-val {
+    flex: 1;
+    color: #c9d1d9;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.76rem;
+    word-break: break-all;
+    cursor: default;
+}
+.ls-tree-val.val-ip    { color: #58a6ff; cursor: pointer; }
+.ls-tree-val.val-ip:hover { text-decoration: underline; }
+.ls-tree-val.val-user  { color: #d2a8ff; }
+.ls-tree-val.val-ok    { color: #56d364; }
+.ls-tree-val.val-fail  { color: #f85149; }
+.ls-tree-val.val-high  { color: #f85149; }
+.ls-tree-val.val-medium { color: #db6d28; }
+.ls-tree-val.val-low   { color: #e3b341; }
+.ls-tree-val.val-null  { color: #484f58; font-style: italic; }
+.ls-tree-val.val-date  { color: #79c0ff; }
+.ls-tree-val.val-int   { color: #79c0ff; }
+
+/* Context menu */
+.ls-ctx-menu {
+    position: fixed;
+    background: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 180px;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    font-size: 0.8rem;
+}
+.ls-ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    cursor: pointer;
+    color: #c9d1d9;
+    transition: background 0.1s;
+}
+.ls-ctx-item:hover { background: rgba(88,166,255,0.1); color: #58a6ff; }
+.ls-ctx-divider  { border-top: 1px solid #21262d; margin: 3px 0; }
+
+/* Investigation action buttons */
+#ls-action-bar {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 10px;
+    background: #161b22;
+    border-top: 1px solid #21262d;
+    border-bottom: 1px solid #21262d;
+}
+.ls-action-btn {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid #30363d;
+    background: transparent;
+    color: #8b949e;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.1s;
+}
+.ls-action-btn:hover { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
+.ls-action-btn.danger:hover { border-color: #f85149; color: #f85149; background: rgba(248,81,73,0.08); }
+
+/* ── Raw Log Viewer ───────────────────────────────────────────────────────── */
+#ls-raw-pane {
+    flex: 0 0 28%;
+    display: flex;
+    flex-direction: column;
+    border-top: 2px solid #30363d;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#ls-raw-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: #161b22;
+    border-bottom: 1px solid #21262d;
+    font-size: 0.75rem;
+    color: #8b949e;
+}
+
+#ls-raw-body {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 14px;
+    background: #010409;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.76rem;
+    line-height: 1.7;
+    color: #c9d1d9;
+}
+#ls-raw-body .raw-empty { color: #484f58; font-style: italic; }
+
+/* Syntax highlight spans */
+.rw-ts    { color: #79c0ff; }
+.rw-host  { color: #56d364; }
+.rw-proc  { color: #d2a8ff; }
+.rw-ip    { color: #58a6ff; cursor: pointer; }
+.rw-ip:hover { text-decoration: underline; }
+.rw-user  { color: #ffa657; }
+.rw-kw-fail { color: #f85149; font-weight: bold; }
+.rw-kw-ok   { color: #56d364; font-weight: bold; }
+.rw-num   { color: #79c0ff; }
+.rw-str   { color: #a5d6ff; }
+.rw-status-2xx { color: #56d364; }
+.rw-status-3xx { color: #79c0ff; }
+.rw-status-4xx { color: #e3b341; }
+.rw-status-5xx { color: #f85149; }
+
+/* ── Utility / Toast ─────────────────────────────────────────────────────── */
+#ls-toast-area {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+}
+.ls-toast {
+    background: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 14px;
+    color: #c9d1d9;
+    font-size: 0.8rem;
+    animation: toastIn 0.2s ease;
+    pointer-events: all;
+    max-width: 300px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.ls-toast.success { border-left: 3px solid #56d364; }
+.ls-toast.info    { border-left: 3px solid #58a6ff; }
+.ls-toast.error   { border-left: 3px solid #f85149; }
+
+/* ── Loading overlay ─────────────────────────────────────────────────────── */
+#ls-loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(13,17,23,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(2px);
+}
+#ls-loading-overlay.hidden { display: none; }
+
+/* ── Placeholder ─────────────────────────────────────────────────────────── */
+.ls-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 8px;
+    color: #484f58;
+    font-size: 0.82rem;
+}
+.ls-placeholder i { font-size: 2rem; }
+
+/* ── Keyboard focus ──────────────────────────────────────────────────────── */
+#ls-table-scroll:focus { outline: none; }
+.ls-row.keyboard-focus { box-shadow: inset 0 0 0 1px rgba(88,166,255,0.4); }
+
+/* ── Resizer drag ghost ──────────────────────────────────────────────────── */
+body.col-resizing { cursor: col-resize !important; user-select: none !important; }
+
+/* ── Responsive collapse detail pane ────────────────────────────────────── */
+@media (max-width: 1100px) {
+    #ls-workspace { grid-template-columns: 1fr; }
+    #ls-detail-pane { display: none; }
+}
