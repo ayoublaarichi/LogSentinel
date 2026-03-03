@@ -6,36 +6,64 @@
 <div class="row justify-content-center">
     <div class="col-lg-8 col-xl-6">
 
+        <!-- ── Upload card ──────────────────────────────────────────── -->
         <div class="card bg-dark border-secondary">
-            <div class="card-header border-secondary d-flex align-items-center gap-2">
-                <i class="bi bi-cloud-arrow-up text-info fs-5"></i>
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-cloud-arrow-up icon-glow-accent fs-5"></i>
                 <strong>Upload Log File</strong>
             </div>
             <div class="card-body">
-                <p class="text-secondary mb-4">
-                    Upload a <strong>Linux auth.log</strong> or <strong>Nginx access log</strong>
-                    file. LogSentinel will parse the file, extract structured events, and
+                <p style="color:var(--ls-text-muted);font-size:0.9rem" class="mb-4">
+                    Upload a <strong class="text-light">Linux auth.log</strong> or
+                    <strong class="text-light">Nginx access log</strong> file.
+                    LogSentinel will parse the file, extract structured events, and
                     automatically run detection rules to surface security alerts.
                 </p>
 
                 <form id="uploadForm" enctype="multipart/form-data">
-                    <!-- Log type selector -->
+                    <!-- Log type -->
                     <div class="mb-3">
-                        <label for="logType" class="form-label">Log Type</label>
-                        <select id="logType" class="form-select bg-dark text-light border-secondary">
-                            <option value="auto" selected>Auto-detect from filename</option>
+                        <label for="logType" class="form-label small"
+                               style="color:var(--ls-text-muted);text-transform:uppercase;
+                                      letter-spacing:.06em;font-size:.72rem">Log Type</label>
+                        <select id="logType"
+                                class="form-select bg-dark text-light border-secondary"
+                                style="font-family:var(--ls-font-mono);font-size:0.85rem">
+                            <option value="auto">Auto-detect from filename</option>
                             <option value="auth">Linux auth.log (SSH)</option>
                             <option value="nginx">Nginx access log</option>
                         </select>
                     </div>
 
-                    <!-- File input -->
+                    <!-- Drag-drop upload zone -->
                     <div class="mb-4">
-                        <label for="logFile" class="form-label">Log File</label>
-                        <input type="file" id="logFile" class="form-control bg-dark text-light border-secondary"
-                               accept=".log,.txt" required>
-                        <div class="form-text text-secondary">
-                            Accepted formats: <code>.log</code>, <code>.txt</code> — max recommended 50 MB.
+                        <label class="form-label small"
+                               style="color:var(--ls-text-muted);text-transform:uppercase;
+                                      letter-spacing:.06em;font-size:.72rem">Log File</label>
+
+                        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('logFile').click()">
+                            <input type="file" id="logFile" accept=".log,.txt" required
+                                   style="display:none">
+                            <div id="uploadZoneContent">
+                                <i class="bi bi-cloud-arrow-up"
+                                   style="font-size:2.5rem;color:var(--ls-accent);
+                                          text-shadow:var(--ls-glow-accent);display:block;
+                                          margin-bottom:.5rem"></i>
+                                <div style="font-size:0.9rem;color:var(--ls-text-muted)">
+                                    Drag &amp; drop a log file here, or
+                                    <span style="color:var(--ls-accent);cursor:pointer">browse</span>
+                                </div>
+                                <div style="font-size:0.75rem;color:var(--ls-text-dim);margin-top:.25rem">
+                                    Accepted: <code>.log</code>, <code>.txt</code> — max recommended 50 MB
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="fileChosen"
+                             style="display:none;margin-top:.5rem;font-size:.8rem;
+                                    font-family:var(--ls-font-mono);color:var(--ls-accent)">
+                            <i class="bi bi-file-earmark-text me-1"></i>
+                            <span id="fileChosenName"></span>
                         </div>
                     </div>
 
@@ -44,51 +72,96 @@
                     </button>
                 </form>
 
-                <!-- Progress + result -->
+                <!-- Progress bar -->
                 <div id="uploadProgress" class="mt-4 d-none">
-                    <div class="d-flex align-items-center gap-2 text-info mb-2">
-                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                    <div class="d-flex align-items-center gap-2 mb-2"
+                         style="color:var(--ls-accent);font-size:.85rem;font-family:var(--ls-font-mono)">
+                        <div class="spinner-border spinner-border-sm"></div>
                         <span>Uploading and analysing…</span>
                     </div>
-                    <div class="progress" style="height:6px">
-                        <div class="progress-bar bg-info progress-bar-striped progress-bar-animated"
-                             style="width:100%"></div>
+                    <div class="progress" style="height:4px;background:var(--ls-bg-3)">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             style="width:100%;background:var(--ls-accent)"></div>
                     </div>
                 </div>
 
+                <!-- Terminal-style result block -->
                 <div id="uploadResult" class="mt-4 d-none"></div>
             </div>
         </div>
 
-        <!-- Help card -->
+        <!-- ── Help card ────────────────────────────────────────────── -->
         <div class="card bg-dark border-secondary mt-3">
-            <div class="card-body small text-secondary">
-                <h6 class="text-light"><i class="bi bi-info-circle me-1"></i>Supported Formats</h6>
-                <ul class="mb-0">
-                    <li><strong>auth.log</strong> — Standard Linux/syslog SSH authentication logs
-                        (<code>sshd</code> lines with Failed/Accepted password, Invalid user, etc.)</li>
-                    <li><strong>Nginx access log</strong> — Combined log format:
-                        <code>IP - user [timestamp] "METHOD /path HTTP/x.x" status bytes "ref" "UA"</code></li>
+            <div class="card-body small" style="color:var(--ls-text-muted)">
+                <h6 class="text-light mb-2">
+                    <i class="bi bi-info-circle me-1"></i>Supported Formats
+                </h6>
+                <ul class="mb-0" style="line-height:1.9">
+                    <li>
+                        <strong class="text-light">auth.log</strong> —
+                        Standard Linux/syslog SSH authentication logs
+                        (<code>sshd</code> lines with Failed/Accepted password, Invalid user, etc.)
+                    </li>
+                    <li>
+                        <strong class="text-light">Nginx access log</strong> —
+                        Combined log format:
+                        <code>IP - user [timestamp] "METHOD /path HTTP/x.x" status bytes "ref" "UA"</code>
+                    </li>
                 </ul>
             </div>
         </div>
+
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+/* ── File input handling ─────────────────────────────────────────────── */
+const fileInput  = document.getElementById('logFile');
+const uploadZone = document.getElementById('uploadZone');
+const fileChosen = document.getElementById('fileChosen');
+const fileChosenName = document.getElementById('fileChosenName');
+
+function showChosenFile(file) {
+    if (!file) return;
+    fileChosenName.textContent = file.name + '  (' + (file.size / 1024).toFixed(1) + ' KB)';
+    fileChosen.style.display = 'block';
+    uploadZone.classList.add('drag-over');
+    setTimeout(() => uploadZone.classList.remove('drag-over'), 800);
+}
+
+fileInput.addEventListener('change', () => showChosenFile(fileInput.files[0]));
+
+/* ── Drag-and-drop ───────────────────────────────────────────────────── */
+uploadZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+});
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    const dt = e.dataTransfer;
+    if (dt.files.length) {
+        // Assign file to input
+        const transfer = new DataTransfer();
+        transfer.items.add(dt.files[0]);
+        fileInput.files = transfer.files;
+        showChosenFile(dt.files[0]);
+    }
+});
+
+/* ── Upload submit ───────────────────────────────────────────────────── */
 document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const fileInput = document.getElementById('logFile');
-    const logType   = document.getElementById('logType').value;
-    const btn       = document.getElementById('btnUpload');
-    const progress  = document.getElementById('uploadProgress');
-    const result    = document.getElementById('uploadResult');
+    const logType  = document.getElementById('logType').value;
+    const btn      = document.getElementById('btnUpload');
+    const progress = document.getElementById('uploadProgress');
+    const result   = document.getElementById('uploadResult');
 
     if (!fileInput.files.length) return;
 
-    // Show progress
     btn.disabled = true;
     progress.classList.remove('d-none');
     result.classList.add('d-none');
@@ -105,30 +178,44 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
 
         if (resp.ok) {
             result.innerHTML = `
-                <div class="alert alert-success border-success">
-                    <h6 class="alert-heading"><i class="bi bi-check-circle me-1"></i>Upload Successful</h6>
-                    <p class="mb-1">${data.message}</p>
-                    <hr>
-                    <div class="d-flex gap-3 small">
-                        <span><strong>File:</strong> ${data.filename}</span>
-                        <span><strong>Events:</strong> ${data.events_parsed}</span>
-                        <span><strong>Alerts:</strong> ${data.alerts_generated}</span>
+                <div class="terminal-block">
+                    <div class="mb-2" style="color:#3fb950;font-size:.85rem">
+                        <i class="bi bi-check-circle me-1"></i>Upload Successful
                     </div>
-                    <div class="mt-2">
-                        <a href="/events" class="btn btn-sm btn-outline-light me-1">View Events</a>
-                        <a href="/alerts" class="btn btn-sm btn-outline-warning">View Alerts</a>
+                    <div class="mb-1">
+                        <span class="t-prompt">sentinel@soc</span>
+                        <span class="text-secondary">:~$</span>
+                        <span style="color:var(--ls-text)" class="ms-1">parse ${escapeHtml(data.filename)}</span>
+                    </div>
+                    <div style="margin-top:.5rem;line-height:2">
+                        <span class="t-key">filename</span><span class="t-val">${escapeHtml(data.filename)}</span><br>
+                        <span class="t-key">message </span><span class="t-val">${escapeHtml(data.message)}</span><br>
+                        <span class="t-key">events  </span><span class="t-val" style="color:#3fb950">${data.events_parsed}</span><br>
+                        <span class="t-key">alerts  </span><span class="t-val" style="color:${data.alerts_generated > 0 ? 'var(--ls-sev-high)' : '#3fb950'}">${data.alerts_generated}</span>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <a href="/events" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-list-ul me-1"></i>View Events
+                        </a>
+                        <a href="/alerts" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-exclamation-triangle me-1"></i>View Alerts
+                        </a>
                     </div>
                 </div>`;
         } else {
             result.innerHTML = `
-                <div class="alert alert-danger border-danger">
-                    <i class="bi bi-x-circle me-1"></i>${data.detail || 'Upload failed.'}
+                <div class="terminal-block">
+                    <div style="color:var(--ls-sev-high)">
+                        <i class="bi bi-x-circle me-1"></i>Upload failed — ${escapeHtml(data.detail || 'Unknown error')}
+                    </div>
                 </div>`;
         }
     } catch (err) {
         result.innerHTML = `
-            <div class="alert alert-danger border-danger">
-                <i class="bi bi-x-circle me-1"></i>Network error: ${err.message}
+            <div class="terminal-block">
+                <div style="color:var(--ls-sev-high)">
+                    <i class="bi bi-x-circle me-1"></i>Network error: ${escapeHtml(err.message)}
+                </div>
             </div>`;
     } finally {
         btn.disabled = false;
@@ -136,5 +223,11 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
         result.classList.remove('d-none');
     }
 });
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(s)));
+    return d.innerHTML;
+}
 </script>
 {% endblock %}

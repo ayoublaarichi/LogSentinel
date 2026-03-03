@@ -3,49 +3,73 @@
 {% block nav_alerts %}active{% endblock %}
 
 {% block content %}
-<!-- Stats cards -->
+<!-- ── Severity stat cards ────────────────────────────────────────────── -->
 <div class="row g-3 mb-4" id="alertStats">
+
     <div class="col-md-3 col-6">
-        <div class="card stat-card border-danger text-center">
+        <div class="card stat-card text-center" style="border-color:var(--ls-sev-critical)">
             <div class="card-body py-3">
-                <h3 class="mb-0 fw-bold" id="statCritical">0</h3>
-                <small class="text-danger">Critical</small>
+                <i class="bi bi-fire fs-3 mb-1 d-block" style="color:var(--ls-sev-critical)"></i>
+                <h3 class="mb-0 fw-bold stat-num-alert"
+                    style="color:var(--ls-sev-critical);text-shadow:var(--ls-glow-critical)"
+                    id="statCritical">
+                    <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
+                </h3>
+                <small class="text-muted">Critical</small>
             </div>
         </div>
     </div>
+
     <div class="col-md-3 col-6">
-        <div class="card stat-card border-warning text-center">
+        <div class="card stat-card text-center" style="border-color:var(--ls-sev-high)">
             <div class="card-body py-3">
-                <h3 class="mb-0 fw-bold" id="statHigh">0</h3>
-                <small class="text-warning">High</small>
+                <i class="bi bi-shield-exclamation fs-3 mb-1 d-block" style="color:var(--ls-sev-high)"></i>
+                <h3 class="mb-0 fw-bold stat-num-alert"
+                    style="color:var(--ls-sev-high)"
+                    id="statHigh">
+                    <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
+                </h3>
+                <small class="text-muted">High</small>
             </div>
         </div>
     </div>
+
     <div class="col-md-3 col-6">
-        <div class="card stat-card border-info text-center">
+        <div class="card stat-card text-center" style="border-color:var(--ls-sev-medium)">
             <div class="card-body py-3">
-                <h3 class="mb-0 fw-bold" id="statMedium">0</h3>
-                <small class="text-info">Medium</small>
+                <i class="bi bi-exclamation-circle fs-3 mb-1 d-block" style="color:var(--ls-sev-medium)"></i>
+                <h3 class="mb-0 fw-bold stat-num-alert"
+                    style="color:var(--ls-sev-medium)"
+                    id="statMedium">
+                    <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
+                </h3>
+                <small class="text-muted">Medium</small>
             </div>
         </div>
     </div>
+
     <div class="col-md-3 col-6">
-        <div class="card stat-card border-secondary text-center">
+        <div class="card stat-card text-center" style="border-color:var(--ls-border-2)">
             <div class="card-body py-3">
-                <h3 class="mb-0 fw-bold" id="statLow">0</h3>
-                <small class="text-secondary">Low</small>
+                <i class="bi bi-info-circle fs-3 mb-1 d-block text-secondary"></i>
+                <h3 class="mb-0 fw-bold stat-num-alert text-secondary" id="statLow">
+                    <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
+                </h3>
+                <small class="text-muted">Low</small>
             </div>
         </div>
     </div>
+
 </div>
 
-<!-- Filter bar -->
+<!-- ── Filter bar ─────────────────────────────────────────────────────── -->
 <div class="card bg-dark border-secondary mb-3">
     <div class="card-body py-2">
         <form id="alertFilterForm" class="row g-2 align-items-end">
             <div class="col-md-3">
-                <label class="form-label small text-secondary mb-0">Severity</label>
-                <select id="fSev" class="form-select form-select-sm bg-dark text-light border-secondary">
+                <label class="form-label small mb-1" style="color:var(--ls-text-muted)">Severity</label>
+                <select id="fSev"
+                        class="form-select form-select-sm bg-dark text-light border-secondary">
                     <option value="">All</option>
                     <option value="critical">Critical</option>
                     <option value="high">High</option>
@@ -54,20 +78,25 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small text-secondary mb-0">Rule</label>
-                <select id="fRule" class="form-select form-select-sm bg-dark text-light border-secondary">
+                <label class="form-label small mb-1" style="color:var(--ls-text-muted)">Rule</label>
+                <select id="fRule"
+                        class="form-select form-select-sm bg-dark text-light border-secondary">
                     <option value="">All</option>
                     <option value="SSH Brute Force">SSH Brute Force</option>
                     <option value="Nginx Request Flood">Nginx Request Flood</option>
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small text-secondary mb-0">Source IP</label>
-                <input type="text" id="fAlertIP" class="form-control form-control-sm bg-dark text-light border-secondary"
-                       placeholder="e.g. 10.0.0.5">
+                <label class="form-label small mb-1" style="color:var(--ls-text-muted)">Source IP</label>
+                <input type="text" id="fAlertIP"
+                       class="form-control form-control-sm bg-dark text-light border-secondary"
+                       placeholder="e.g. 10.0.0.5"
+                       style="font-family:var(--ls-font-mono)">
             </div>
             <div class="col-md-3">
-                <button type="submit" class="btn btn-info btn-sm w-100">
+                <button type="submit" class="btn btn-sm w-100"
+                        style="background:rgba(77,158,255,0.12);color:var(--ls-accent);
+                               border:1px solid rgba(77,158,255,0.3)">
                     <i class="bi bi-search me-1"></i>Filter
                 </button>
             </div>
@@ -75,29 +104,41 @@
     </div>
 </div>
 
-<!-- Alerts table -->
+<!-- ── Alerts table ───────────────────────────────────────────────────── -->
 <div class="card bg-dark border-secondary">
-    <div class="card-header border-secondary d-flex align-items-center gap-2">
-        <i class="bi bi-exclamation-triangle text-warning"></i>
+    <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle" style="color:var(--ls-sev-high)"></i>
         <strong>Security Alerts</strong>
+        <span id="alertCount" class="badge ms-2"
+              style="font-size:0.68rem;background:rgba(255,255,255,0.06);
+                     border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">…</span>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-dark table-hover mb-0">
                 <thead>
                     <tr>
-                        <th>Severity</th>
-                        <th>Rule Name</th>
-                        <th>Source IP</th>
-                        <th>Event Count</th>
+                        <th data-bs-toggle="tooltip" title="Threat severity level" style="cursor:help">Severity</th>
+                        <th data-bs-toggle="tooltip" title="Detection rule that fired" style="cursor:help">Rule Name</th>
+                        <th data-bs-toggle="tooltip" title="Attacking / suspicious source IP" style="cursor:help">Source IP</th>
+                        <th data-bs-toggle="tooltip" title="How many matching events triggered this alert" style="cursor:help">Count</th>
                         <th>First Seen</th>
                         <th>Last Seen</th>
                         <th>Description</th>
-                        <th>Action</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody id="alertsBody">
-                    <tr><td colspan="8" class="text-center text-secondary py-4">Loading…</td></tr>
+                    <!-- skeleton rows shown while loading -->
+                    <tr><td colspan="8" class="p-0">
+                        <div class="skeleton-cell" style="height:2.5rem;border-radius:0;margin:0"></div>
+                    </td></tr>
+                    <tr><td colspan="8" class="p-0">
+                        <div class="skeleton-cell" style="height:2.5rem;border-radius:0;margin:0"></div>
+                    </td></tr>
+                    <tr><td colspan="8" class="p-0">
+                        <div class="skeleton-cell" style="height:2.5rem;border-radius:0;margin:0"></div>
+                    </td></tr>
                 </tbody>
             </table>
         </div>
@@ -107,23 +148,37 @@
 
 {% block scripts %}
 <script>
+/* ── Simple count-up ─────────────────────────────────────────────────── */
+function countUp(el, target) {
+    if (target === 0) { el.textContent = '0'; return; }
+    const steps = 30, dur = 600;
+    let step = 0;
+    const iv = setInterval(() => {
+        step++;
+        el.textContent = Math.round(target * (step / steps));
+        if (step >= steps) { el.textContent = target; clearInterval(iv); }
+    }, dur / steps);
+}
+
+/* ── Load stats ──────────────────────────────────────────────────────── */
 async function loadStats() {
     try {
         const resp = await fetch('/api/alerts/stats');
         const s = await resp.json();
-        document.getElementById('statCritical').textContent = s.critical;
-        document.getElementById('statHigh').textContent     = s.high;
-        document.getElementById('statMedium').textContent   = s.medium;
-        document.getElementById('statLow').textContent      = s.low;
+        ['Critical','High','Medium','Low'].forEach(k => {
+            const el = document.getElementById('stat' + k);
+            el.innerHTML = '';  // remove skeleton
+            countUp(el, s[k.toLowerCase()] || 0);
+        });
     } catch (_) {}
 }
 
+/* ── Load & render alerts ────────────────────────────────────────────── */
 async function loadAlerts() {
     const params = new URLSearchParams();
     const sev  = document.getElementById('fSev').value;
     const rule = document.getElementById('fRule').value;
     const ip   = document.getElementById('fAlertIP').value.trim();
-
     if (sev)  params.set('severity', sev);
     if (rule) params.set('rule_name', rule);
     if (ip)   params.set('source_ip', ip);
@@ -140,37 +195,47 @@ async function loadAlerts() {
 
 function renderAlerts(alerts) {
     const body = document.getElementById('alertsBody');
+    const cnt  = document.getElementById('alertCount');
+    if (cnt) cnt.textContent = alerts.length;
 
     if (!alerts.length) {
         body.innerHTML = `
-            <tr><td colspan="8" class="text-center text-secondary py-5">
-                <i class="bi bi-shield-check fs-1 d-block mb-2"></i>
+            <tr><td colspan="8" class="text-center py-5" style="color:var(--ls-text-dim)">
+                <i class="bi bi-shield-check fs-1 icon-glow-success d-block mb-2"></i>
                 No alerts found. The perimeter looks clear.
             </td></tr>`;
         return;
     }
 
-    body.innerHTML = alerts.map(a => {
-        const sevClass = a.severity === 'critical' ? 'danger'
-                       : a.severity === 'high'     ? 'warning'
-                       : a.severity === 'medium'   ? 'info'
-                       : 'secondary';
-        return `
-        <tr>
-            <td><span class="badge bg-${sevClass}">${a.severity.toUpperCase()}</span></td>
-            <td class="fw-semibold">${a.rule_name}</td>
+    body.innerHTML = alerts.map(a => `
+        <tr class="row-${a.severity}">
+            <td><span class="badge sev-${a.severity}">${a.severity.toUpperCase()}</span></td>
+            <td class="fw-semibold small text-mono">${a.rule_name}</td>
             <td><code>${a.source_ip}</code></td>
-            <td class="text-center"><span class="badge bg-dark border border-secondary">${a.event_count}</span></td>
-            <td class="small">${new Date(a.first_seen).toLocaleString()}</td>
-            <td class="small">${new Date(a.last_seen).toLocaleString()}</td>
-            <td class="small text-secondary">${a.description}</td>
+            <td class="text-center">
+                <span class="badge"
+                      style="font-family:var(--ls-font-mono);font-size:0.75rem;
+                             background:rgba(255,255,255,0.06);border:1px solid var(--ls-border-2)">
+                    ${a.event_count}
+                </span>
+            </td>
+            <td class="small text-dim">${new Date(a.first_seen).toLocaleString()}</td>
+            <td class="small text-dim">${new Date(a.last_seen).toLocaleString()}</td>
+            <td class="small text-muted">${a.description}</td>
             <td>
-                <button class="btn btn-sm btn-outline-danger" onclick="dismissAlert(${a.id})" title="Dismiss">
+                <button class="btn btn-xs btn-outline-danger px-2 py-0"
+                        onclick="dismissAlert(${a.id})"
+                        data-bs-toggle="tooltip" title="Dismiss alert"
+                        style="font-size:0.75rem">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
-        </tr>`;
-    }).join('');
+        </tr>`).join('');
+
+    // re-init tooltips on new rows
+    body.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el =>
+        new bootstrap.Tooltip(el, { trigger: 'hover focus', delay: { show: 300, hide: 0 } })
+    );
 }
 
 async function dismissAlert(id) {
@@ -180,7 +245,7 @@ async function dismissAlert(id) {
     loadStats();
 }
 
-document.getElementById('alertFilterForm').addEventListener('submit', (e) => {
+document.getElementById('alertFilterForm').addEventListener('submit', e => {
     e.preventDefault(); loadAlerts();
 });
 
