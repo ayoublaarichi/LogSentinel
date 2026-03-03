@@ -86,7 +86,7 @@ pip install -r requirements.txt
 python -m scripts.seed
 ```
 
-This creates `sample_logs/access.log` with realistic traffic including a flood pattern.
+This creates `sample_logs/auth.log` and `sample_logs/access.log` using your current device/network IP, including brute-force and request-flood patterns.
 
 ### 3. Start the server
 
