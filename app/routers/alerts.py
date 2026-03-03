@@ -67,6 +67,15 @@ def alert_stats(db: Session = Depends(get_db)) -> dict:
     }
 
 
+@router.get("/{alert_id}", response_model=AlertOut)
+def get_alert(alert_id: int, db: Session = Depends(get_db)) -> AlertOut:
+    """Fetch a single alert by ID (used by the details panel)."""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found.")
+    return AlertOut.model_validate(alert)
+
+
 @router.delete("/{alert_id}")
 def delete_alert(alert_id: int, db: Session = Depends(get_db)) -> dict:
     """Delete a single alert (acknowledge / dismiss)."""

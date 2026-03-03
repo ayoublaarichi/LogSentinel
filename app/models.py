@@ -2,7 +2,9 @@
 SQLAlchemy ORM models for log events and security alerts.
 """
 
+import json
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -47,9 +49,29 @@ class Alert(Base):
     first_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    # JSON-encoded list of unique usernames targeted by this attacker IP.
+    # Example: '["root", "admin", "ubuntu"]'
+    # Nullable for backward compatibility with alerts created before this column.
+    usernames: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+
+    def get_usernames(self) -> list[str]:
+        """Decode the JSON-stored usernames list.  Returns [] on missing/bad data."""
+        if not self.usernames:
+            return []
+        try:
+            return json.loads(self.usernames)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    @staticmethod
+    def encode_usernames(names: list[str]) -> str:
+        """JSON-encode a list of usernames for storage."""
+        return json.dumps(sorted(set(names)))
 
     def __repr__(self) -> str:
         return (

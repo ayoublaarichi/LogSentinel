@@ -44,6 +44,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     initComponents();
     await loadData();
     timeline.load(24);
+
+    // ── Pre-apply filters from the URL query string ─────────────────────
+    // Supports:  /events?ip=185.220.101.23&type=ssh_failed&user=root
+    // Used by the "Investigate IP" button on the Alerts page.
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramMap  = { ip: 'ip', type: 'type', user: 'user',
+                        source: 'source', severity: 'severity' };
+    let didAddChip  = false;
+    for (const [param, field] of Object.entries(paramMap)) {
+        const val = urlParams.get(param);
+        if (val) { filterBar.addChip(field, val); didAddChip = true; }
+    }
+    if (didAddChip) {
+        toast(`Filters applied from URL`, 'info');
+    }
 });
 
 function initComponents() {
@@ -144,24 +159,39 @@ function matchChips(ev, chips) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Event enrichment — adds _severity and _rule from known patterns
+   Maps must include the exact event_type values produced by the parsers.
    ═══════════════════════════════════════════════════════════════════════════ */
 const SEVERITY_MAP = {
-    ssh_failed:              'high',
-    ssh_brute_force:         'critical',
-    invalid_user:            'medium',
-    http_server_error:       'high',
-    http_client_error:       'low',
-    ssh_closed:              'info',
-    ssh_accepted:            'info',
-    http_ok:                 'info',
+    // auth.log parser values
+    ssh_failed_login    : 'high',
+    ssh_invalid_user    : 'medium',
+    ssh_accepted_login  : 'info',
+    ssh_connection_closed:'info',
+    ssh_other           : 'info',
+    // legacy / alias keys kept for backward compatibility
+    ssh_failed          : 'high',
+    ssh_brute_force     : 'critical',
+    invalid_user        : 'medium',
+    // nginx parser values
+    http_server_error   : 'high',
+    http_client_error   : 'low',
+    http_forbidden      : 'medium',
+    http_ok             : 'info',
+    http_redirect       : 'info',
+    // closed/accepted aliases
+    ssh_closed          : 'info',
+    ssh_accepted        : 'info',
 };
 
 const RULE_MAP = {
-    ssh_failed:        'SSH Brute Force (candidate)',
-    ssh_brute_force:   'SSH Brute Force',
-    invalid_user:      'Invalid User Login',
-    http_server_error: 'Nginx Server Error',
-    http_client_error: 'Nginx Client Error',
+    ssh_failed_login    : 'SSH Brute Force (candidate)',
+    ssh_invalid_user    : 'Invalid User Login',
+    ssh_failed          : 'SSH Brute Force (candidate)',
+    ssh_brute_force     : 'SSH Brute Force',
+    invalid_user        : 'Invalid User Login',
+    http_server_error   : 'Nginx Server Error',
+    http_client_error   : 'Nginx Client Error',
+    http_forbidden      : 'Nginx Forbidden',
 };
 
 function enrichEvent(ev) {

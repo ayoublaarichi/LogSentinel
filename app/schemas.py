@@ -38,7 +38,12 @@ class LogEventFilter(BaseModel):
 
 # ── Alert Schemas ────────────────────────────────────────────────────────────
 class AlertOut(BaseModel):
-    """Schema returned when listing alerts."""
+    """
+    Schema returned when listing alerts.
+
+    `usernames` is decoded from the JSON-encoded column on the model so
+    consumers always receive a plain Python list, never a raw JSON string.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,6 +56,29 @@ class AlertOut(BaseModel):
     last_seen: datetime
     description: str
     created_at: datetime
+    # Decoded list of unique usernames targeted by this attacker IP.
+    # Falls back to [] for legacy alerts that predate the column.
+    usernames: list[str] = []
+
+    @classmethod
+    def model_validate(cls, obj, **kw):  # type: ignore[override]
+        """Decode the JSON usernames string before pydantic sees it."""
+        if hasattr(obj, "get_usernames"):
+            # ORM object — call the helper to decode JSON → list[str]
+            data = {
+                "id": obj.id,
+                "rule_name": obj.rule_name,
+                "severity": obj.severity,
+                "source_ip": obj.source_ip,
+                "event_count": obj.event_count,
+                "first_seen": obj.first_seen,
+                "last_seen": obj.last_seen,
+                "description": obj.description,
+                "created_at": obj.created_at,
+                "usernames": obj.get_usernames(),
+            }
+            return cls(**data)
+        return super().model_validate(obj, **kw)
 
 
 # ── Upload Response ──────────────────────────────────────────────────────────

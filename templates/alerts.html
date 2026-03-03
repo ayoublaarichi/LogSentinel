@@ -1,16 +1,16 @@
-{% extends "base.html" %}
-{% block title %}LogSentinel — Alerts{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}LogSentinel â€” Alerts{% endblock %}
 {% block nav_alerts %}active{% endblock %}
 
 {% block content %}
-<!-- ── Severity stat cards ────────────────────────────────────────────── -->
+<!-- â”€â”€ Severity stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="row g-3 mb-4" id="alertStats">
 
     <div class="col-md-3 col-6">
         <div class="card stat-card text-center" style="border-color:var(--ls-sev-critical)">
             <div class="card-body py-3">
                 <i class="bi bi-fire fs-3 mb-1 d-block" style="color:var(--ls-sev-critical)"></i>
-                <h3 class="mb-0 fw-bold stat-num-alert"
+                <h3 class="mb-0 fw-bold"
                     style="color:var(--ls-sev-critical);text-shadow:var(--ls-glow-critical)"
                     id="statCritical">
                     <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
@@ -23,10 +23,9 @@
     <div class="col-md-3 col-6">
         <div class="card stat-card text-center" style="border-color:var(--ls-sev-high)">
             <div class="card-body py-3">
-                <i class="bi bi-shield-exclamation fs-3 mb-1 d-block" style="color:var(--ls-sev-high)"></i>
-                <h3 class="mb-0 fw-bold stat-num-alert"
-                    style="color:var(--ls-sev-high)"
-                    id="statHigh">
+                <i class="bi bi-shield-exclamation fs-3 mb-1 d-block"
+                   style="color:var(--ls-sev-high)"></i>
+                <h3 class="mb-0 fw-bold" style="color:var(--ls-sev-high)" id="statHigh">
                     <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
                 </h3>
                 <small class="text-muted">High</small>
@@ -37,10 +36,9 @@
     <div class="col-md-3 col-6">
         <div class="card stat-card text-center" style="border-color:var(--ls-sev-medium)">
             <div class="card-body py-3">
-                <i class="bi bi-exclamation-circle fs-3 mb-1 d-block" style="color:var(--ls-sev-medium)"></i>
-                <h3 class="mb-0 fw-bold stat-num-alert"
-                    style="color:var(--ls-sev-medium)"
-                    id="statMedium">
+                <i class="bi bi-exclamation-circle fs-3 mb-1 d-block"
+                   style="color:var(--ls-sev-medium)"></i>
+                <h3 class="mb-0 fw-bold" style="color:var(--ls-sev-medium)" id="statMedium">
                     <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
                 </h3>
                 <small class="text-muted">Medium</small>
@@ -52,7 +50,7 @@
         <div class="card stat-card text-center" style="border-color:var(--ls-border-2)">
             <div class="card-body py-3">
                 <i class="bi bi-info-circle fs-3 mb-1 d-block text-secondary"></i>
-                <h3 class="mb-0 fw-bold stat-num-alert text-secondary" id="statLow">
+                <h3 class="mb-0 fw-bold text-secondary" id="statLow">
                     <span class="skeleton-cell" style="width:2.5rem;height:1.6rem;border-radius:4px"></span>
                 </h3>
                 <small class="text-muted">Low</small>
@@ -62,12 +60,13 @@
 
 </div>
 
-<!-- ── Filter bar ─────────────────────────────────────────────────────── -->
+<!-- â”€â”€ Filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="card bg-dark border-secondary mb-3">
     <div class="card-body py-2">
         <form id="alertFilterForm" class="row g-2 align-items-end">
             <div class="col-md-3">
-                <label class="form-label small mb-1" style="color:var(--ls-text-muted)">Severity</label>
+                <label class="form-label small mb-1"
+                       style="color:var(--ls-text-muted)">Severity</label>
                 <select id="fSev"
                         class="form-select form-select-sm bg-dark text-light border-secondary">
                     <option value="">All</option>
@@ -78,7 +77,8 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small mb-1" style="color:var(--ls-text-muted)">Rule</label>
+                <label class="form-label small mb-1"
+                       style="color:var(--ls-text-muted)">Rule</label>
                 <select id="fRule"
                         class="form-select form-select-sm bg-dark text-light border-secondary">
                     <option value="">All</option>
@@ -87,7 +87,8 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small mb-1" style="color:var(--ls-text-muted)">Source IP</label>
+                <label class="form-label small mb-1"
+                       style="color:var(--ls-text-muted)">Source IP</label>
                 <input type="text" id="fAlertIP"
                        class="form-control form-control-sm bg-dark text-light border-secondary"
                        placeholder="e.g. 10.0.0.5"
@@ -104,39 +105,50 @@
     </div>
 </div>
 
-<!-- ── Alerts table ───────────────────────────────────────────────────── -->
+<!-- â”€â”€ Alerts table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="card bg-dark border-secondary">
     <div class="card-header d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle" style="color:var(--ls-sev-high)"></i>
         <strong>Security Alerts</strong>
         <span id="alertCount" class="badge ms-2"
               style="font-size:0.68rem;background:rgba(255,255,255,0.06);
-                     border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">…</span>
+                     border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">â€¦</span>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-dark table-hover mb-0">
                 <thead>
                     <tr>
-                        <th data-bs-toggle="tooltip" title="Threat severity level" style="cursor:help">Severity</th>
-                        <th data-bs-toggle="tooltip" title="Detection rule that fired" style="cursor:help">Rule Name</th>
-                        <th data-bs-toggle="tooltip" title="Attacking / suspicious source IP" style="cursor:help">Source IP</th>
-                        <th data-bs-toggle="tooltip" title="How many matching events triggered this alert" style="cursor:help">Count</th>
-                        <th>First Seen</th>
-                        <th>Last Seen</th>
-                        <th>Description</th>
-                        <th></th>
+                        <th data-bs-toggle="tooltip"
+                            title="Threat severity level"
+                            style="cursor:help">Severity</th>
+                        <th data-bs-toggle="tooltip"
+                            title="Detection rule that fired"
+                            style="cursor:help">Rule</th>
+                        <th data-bs-toggle="tooltip"
+                            title="Attacker's source IP address"
+                            style="cursor:help">Source IP</th>
+                        <th data-bs-toggle="tooltip"
+                            title="Number of matching events that triggered this alert"
+                            style="cursor:help">Attempts</th>
+                        <th data-bs-toggle="tooltip"
+                            title="Timestamp of the first malicious event"
+                            style="cursor:help">First Seen</th>
+                        <th data-bs-toggle="tooltip"
+                            title="Timestamp of the most recent malicious event"
+                            style="cursor:help">Last Seen</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="alertsBody">
-                    <!-- skeleton rows shown while loading -->
-                    <tr><td colspan="8" class="p-0">
+                    <!-- skeleton rows shown while the first fetch is in-flight -->
+                    <tr><td colspan="7" class="p-0">
                         <div class="skeleton-cell" style="height:2.5rem;border-radius:0;margin:0"></div>
                     </td></tr>
-                    <tr><td colspan="8" class="p-0">
+                    <tr><td colspan="7" class="p-0">
                         <div class="skeleton-cell" style="height:2.5rem;border-radius:0;margin:0"></div>
                     </td></tr>
-                    <tr><td colspan="8" class="p-0">
+                    <tr><td colspan="7" class="p-0">
                         <div class="skeleton-cell" style="height:2.5rem;border-radius:0;margin:0"></div>
                     </td></tr>
                 </tbody>
@@ -146,9 +158,41 @@
 </div>
 {% endblock %}
 
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     Alert Details Offcanvas â€” slides in from the right when a row is
+     clicked.  Populated via  GET /api/alerts/{id}.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<div class="offcanvas offcanvas-end"
+     tabindex="-1"
+     id="alertDetailPane"
+     aria-labelledby="alertDetailLabel"
+     style="width:420px;background:var(--ls-bg-2);border-left:1px solid var(--ls-border)">
+    <div class="offcanvas-header"
+         style="border-bottom:1px solid var(--ls-border);padding:14px 20px">
+        <h6 class="offcanvas-title d-flex align-items-center gap-2"
+            id="alertDetailLabel"
+            style="font-family:var(--ls-font-mono);font-size:.85rem">
+            <i class="bi bi-shield-exclamation" style="color:var(--ls-sev-high)"></i>
+            Alert Details
+        </h6>
+        <button type="button" class="btn-close btn-close-white"
+                data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body" id="alertDetailBody"
+         style="font-size:.85rem;padding:20px">
+        <!-- populated by JS -->
+        <div class="d-flex align-items-center gap-2 text-muted">
+            <div class="spinner-border spinner-border-sm"></div>
+            Loadingâ€¦
+        </div>
+    </div>
+</div>
+
 {% block scripts %}
 <script>
-/* ── Simple count-up ─────────────────────────────────────────────────── */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Count-up animation
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function countUp(el, target) {
     if (target === 0) { el.textContent = '0'; return; }
     const steps = 30, dur = 600;
@@ -160,20 +204,24 @@ function countUp(el, target) {
     }, dur / steps);
 }
 
-/* ── Load stats ──────────────────────────────────────────────────────── */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Stats
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadStats() {
     try {
         const resp = await fetch('/api/alerts/stats');
-        const s = await resp.json();
-        ['Critical','High','Medium','Low'].forEach(k => {
+        const s    = await resp.json();
+        ['Critical', 'High', 'Medium', 'Low'].forEach(k => {
             const el = document.getElementById('stat' + k);
-            el.innerHTML = '';  // remove skeleton
+            el.innerHTML = '';
             countUp(el, s[k.toLowerCase()] || 0);
         });
     } catch (_) {}
 }
 
-/* ── Load & render alerts ────────────────────────────────────────────── */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Load & render alert rows
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadAlerts() {
     const params = new URLSearchParams();
     const sev  = document.getElementById('fSev').value;
@@ -184,12 +232,12 @@ async function loadAlerts() {
     if (ip)   params.set('source_ip', ip);
 
     try {
-        const resp = await fetch(`/api/alerts/?${params}`);
+        const resp   = await fetch(`/api/alerts/?${params}`);
         const alerts = await resp.json();
         renderAlerts(alerts);
     } catch (err) {
         document.getElementById('alertsBody').innerHTML =
-            `<tr><td colspan="8" class="text-center text-danger py-4">${err.message}</td></tr>`;
+            `<tr><td colspan="7" class="text-center text-danger py-4">${escHtml(err.message)}</td></tr>`;
     }
 }
 
@@ -200,53 +248,293 @@ function renderAlerts(alerts) {
 
     if (!alerts.length) {
         body.innerHTML = `
-            <tr><td colspan="8" class="text-center py-5" style="color:var(--ls-text-dim)">
+            <tr><td colspan="7" class="text-center py-5"
+                    style="color:var(--ls-text-dim)">
                 <i class="bi bi-shield-check fs-1 icon-glow-success d-block mb-2"></i>
-                No alerts found. The perimeter looks clear.
+                No alerts found â€” the perimeter is clear.
             </td></tr>`;
         return;
     }
 
     body.innerHTML = alerts.map(a => `
-        <tr class="row-${a.severity}">
+        <tr class="row-${a.severity}" style="cursor:pointer"
+            onclick="openDetail(${a.id})"
+            title="Click to view alert details">
+
             <td><span class="badge sev-${a.severity}">${a.severity.toUpperCase()}</span></td>
-            <td class="fw-semibold small text-mono">${a.rule_name}</td>
-            <td><code>${a.source_ip}</code></td>
+
+            <td class="fw-semibold small text-mono">${escHtml(a.rule_name)}</td>
+
+            <!-- Source IP + Investigate button -->
+            <td>
+                <div class="d-flex align-items-center gap-2">
+                    <code style="font-size:.8rem">${escHtml(a.source_ip)}</code>
+                    <a href="/events?ip=${encodeURIComponent(a.source_ip)}"
+                       class="btn py-0 px-2"
+                       style="font-size:.7rem;border:1px solid rgba(77,158,255,0.35);
+                              color:var(--ls-accent);background:rgba(77,158,255,0.06);
+                              border-radius:3px;white-space:nowrap;line-height:1.6"
+                       onclick="event.stopPropagation()"
+                       data-bs-toggle="tooltip"
+                       title="Open Events filtered by this IP">
+                        <i class="bi bi-search me-1"></i>Investigate
+                    </a>
+                </div>
+            </td>
+
+            <!-- Attempt count -->
             <td class="text-center">
                 <span class="badge"
-                      style="font-family:var(--ls-font-mono);font-size:0.75rem;
-                             background:rgba(255,255,255,0.06);border:1px solid var(--ls-border-2)">
+                      style="font-family:var(--ls-font-mono);font-size:.75rem;
+                             background:rgba(255,255,255,0.06);
+                             border:1px solid var(--ls-border-2)">
                     ${a.event_count}
                 </span>
             </td>
-            <td class="small text-dim">${new Date(a.first_seen).toLocaleString()}</td>
-            <td class="small text-dim">${new Date(a.last_seen).toLocaleString()}</td>
-            <td class="small text-muted">${a.description}</td>
-            <td>
-                <button class="btn btn-xs btn-outline-danger px-2 py-0"
-                        onclick="dismissAlert(${a.id})"
-                        data-bs-toggle="tooltip" title="Dismiss alert"
-                        style="font-size:0.75rem">
-                    <i class="bi bi-trash"></i>
-                </button>
+
+            <td class="small text-dim" style="white-space:nowrap">
+                ${fmtDate(a.first_seen)}
+            </td>
+            <td class="small text-dim" style="white-space:nowrap">
+                ${fmtDate(a.last_seen)}
+            </td>
+
+            <!-- Actions -->
+            <td onclick="event.stopPropagation()">
+                <div class="d-flex gap-1">
+                    <button class="btn py-0 px-2"
+                            onclick="openDetail(${a.id})"
+                            style="font-size:.7rem;border:1px solid var(--ls-border-2);
+                                   color:var(--ls-text-muted);border-radius:3px;line-height:1.6"
+                            data-bs-toggle="tooltip" title="View alert details">
+                        <i class="bi bi-info-circle"></i>
+                    </button>
+                    <button class="btn py-0 px-2"
+                            onclick="dismissAlert(${a.id})"
+                            style="font-size:.7rem;border:1px solid rgba(255,45,85,0.35);
+                                   color:var(--ls-sev-critical);border-radius:3px;line-height:1.6"
+                            data-bs-toggle="tooltip" title="Dismiss / delete alert">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </td>
         </tr>`).join('');
 
-    // re-init tooltips on new rows
+    // Re-init tooltips for the new rows
     body.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el =>
         new bootstrap.Tooltip(el, { trigger: 'hover focus', delay: { show: 300, hide: 0 } })
     );
 }
 
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Alert detail offcanvas
+   Fetches GET /api/alerts/{id} which returns the full AlertOut including
+   the decoded `usernames` list.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+const _detailPane = new bootstrap.Offcanvas(
+    document.getElementById('alertDetailPane')
+);
+
+async function openDetail(alertId) {
+    const body = document.getElementById('alertDetailBody');
+    body.innerHTML = `<div class="d-flex align-items-center gap-2 text-muted">
+        <div class="spinner-border spinner-border-sm"></div> Loadingâ€¦</div>`;
+    _detailPane.show();
+
+    try {
+        const resp = await fetch(`/api/alerts/${alertId}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const a = await resp.json();
+        renderDetail(a);
+    } catch (err) {
+        body.innerHTML = `<div class="text-danger">
+            <i class="bi bi-x-circle me-1"></i>${escHtml(err.message)}</div>`;
+    }
+}
+
+function renderDetail(a) {
+    const body = document.getElementById('alertDetailBody');
+
+    // Compute the attack time window in minutes
+    const first    = new Date(a.first_seen);
+    const last     = new Date(a.last_seen);
+    const spanMin  = Math.round((last - first) / 60000);
+    const spanStr  = spanMin < 1 ? '< 1 min'
+                   : spanMin === 1 ? '1 min'
+                   : `${spanMin} mins`;
+
+    // Targeted usernames list
+    const usernames = a.usernames || [];
+    const usersHtml = usernames.length
+        ? usernames.map(u =>
+              `<span class="badge me-1"
+                     style="font-family:var(--ls-font-mono);font-size:.75rem;
+                            background:rgba(77,158,255,0.1);
+                            border:1px solid rgba(77,158,255,0.3);
+                            color:var(--ls-accent)">${escHtml(u)}</span>`
+          ).join('')
+        : '<span class="text-dim">none recorded</span>';
+
+    const sevColor = {
+        critical : 'var(--ls-sev-critical)',
+        high     : 'var(--ls-sev-high)',
+        medium   : 'var(--ls-sev-medium)',
+        low      : 'var(--ls-sev-low)',
+    }[a.severity] || 'var(--ls-text)';
+
+    body.innerHTML = `
+        <!-- Severity badge -->
+        <div class="mb-3">
+            <span class="badge sev-${a.severity}"
+                  style="font-size:.8rem;padding:4px 10px">
+                ${a.severity.toUpperCase()}
+            </span>
+            <span class="ms-2 fw-semibold" style="font-size:.9rem">${escHtml(a.rule_name)}</span>
+        </div>
+
+        <!-- Attacker IP prominently displayed -->
+        <div class="mb-3 p-3"
+             style="background:rgba(255,45,85,0.06);
+                    border:1px solid rgba(255,45,85,0.2);
+                    border-radius:6px">
+            <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;
+                        color:var(--ls-text-dim);margin-bottom:4px">
+                <i class="bi bi-crosshair me-1"></i>Attacker IP
+            </div>
+            <div style="font-family:var(--ls-font-mono);font-size:1.2rem;
+                        color:${sevColor};font-weight:600">
+                ${escHtml(a.source_ip)}
+            </div>
+            <a href="/events?ip=${encodeURIComponent(a.source_ip)}"
+               class="btn btn-sm mt-2"
+               style="font-size:.75rem;border:1px solid rgba(77,158,255,0.35);
+                      color:var(--ls-accent);background:rgba(77,158,255,0.07)">
+                <i class="bi bi-search me-1"></i>Investigate IP in Events
+            </a>
+        </div>
+
+        <!-- Key metrics grid -->
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <div class="p-2 text-center"
+                     style="background:rgba(255,255,255,0.04);
+                            border:1px solid var(--ls-border);
+                            border-radius:6px">
+                    <div style="font-size:1.4rem;font-weight:700;
+                                font-family:var(--ls-font-mono);
+                                color:${sevColor}">
+                        ${a.event_count}
+                    </div>
+                    <div style="font-size:.7rem;color:var(--ls-text-dim)">
+                        Login Attempts
+                    </div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="p-2 text-center"
+                     style="background:rgba(255,255,255,0.04);
+                            border:1px solid var(--ls-border);
+                            border-radius:6px">
+                    <div style="font-size:1.4rem;font-weight:700;
+                                font-family:var(--ls-font-mono);
+                                color:var(--ls-text)">
+                        ${escHtml(spanStr)}
+                    </div>
+                    <div style="font-size:.7rem;color:var(--ls-text-dim)">
+                        Attack Window
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Targeted usernames -->
+        <div class="mb-3">
+            <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;
+                        color:var(--ls-text-dim);margin-bottom:6px">
+                <i class="bi bi-person-fill-x me-1"></i>Targeted Usernames
+            </div>
+            <div>${usersHtml}</div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="mb-3">
+            <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;
+                        color:var(--ls-text-dim);margin-bottom:6px">
+                <i class="bi bi-clock-history me-1"></i>Timeline
+            </div>
+            <div style="font-family:var(--ls-font-mono);font-size:.78rem;line-height:2">
+                <span style="color:var(--ls-text-muted)">first seen</span>
+                <span class="ms-2" style="color:var(--ls-text)">${fmtDateFull(a.first_seen)}</span><br>
+                <span style="color:var(--ls-text-muted)">last seen </span>
+                <span class="ms-2" style="color:var(--ls-text)">${fmtDateFull(a.last_seen)}</span>
+            </div>
+        </div>
+
+        <!-- Description -->
+        <div class="mb-4">
+            <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;
+                        color:var(--ls-text-dim);margin-bottom:6px">
+                <i class="bi bi-text-paragraph me-1"></i>Description
+            </div>
+            <p style="color:var(--ls-text-muted);font-size:.82rem;margin:0">${escHtml(a.description)}</p>
+        </div>
+
+        <!-- Bottom actions -->
+        <div class="d-flex gap-2 pt-2"
+             style="border-top:1px solid var(--ls-border)">
+            <a href="/events?ip=${encodeURIComponent(a.source_ip)}"
+               class="btn btn-sm flex-grow-1"
+               style="border:1px solid rgba(77,158,255,0.35);
+                      color:var(--ls-accent);background:rgba(77,158,255,0.07)">
+                <i class="bi bi-search me-1"></i>Investigate in Events
+            </a>
+            <button class="btn btn-sm"
+                    onclick="dismissAlert(${a.id})"
+                    style="border:1px solid rgba(255,45,85,0.35);
+                           color:var(--ls-sev-critical);background:rgba(255,45,85,0.06)">
+                <i class="bi bi-trash me-1"></i>Dismiss
+            </button>
+        </div>`;
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Dismiss alert
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function dismissAlert(id) {
     if (!confirm('Dismiss this alert?')) return;
+    _detailPane.hide();
     await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
     loadAlerts();
     loadStats();
 }
 
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Utilities
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+function fmtDate(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+        year: '2-digit', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+    });
+}
+function fmtDateFull(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+}
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(s)));
+    return d.innerHTML;
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Boot
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 document.getElementById('alertFilterForm').addEventListener('submit', e => {
-    e.preventDefault(); loadAlerts();
+    e.preventDefault();
+    loadAlerts();
 });
 
 loadStats();
