@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Events{% endblock %}
+{% block nav_events %}active{% endblock %}
+
+{% block content %}
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary d-flex align-items-center gap-2">
+        <i class="bi bi-funnel text-info"></i>
+        <strong>Filter Events</strong>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="resetFilters()">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+        </button>
+    </div>
+    <div class="card-body">
+        <form id="filterForm" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small text-secondary">Source IP</label>
+                <input type="text" id="fIP" class="form-control form-control-sm bg-dark text-light border-secondary"
+                       placeholder="e.g. 192.168.1.100">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-secondary">Event Type</label>
+                <select id="fType" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-secondary">Log Source</label>
+                <select id="fSource" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="">All</option>
+                    <option value="auth">auth</option>
+                    <option value="nginx">nginx</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-secondary">Start Time</label>
+                <input type="datetime-local" id="fStart"
+                       class="form-control form-control-sm bg-dark text-light border-secondary">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-secondary">End Time</label>
+                <input type="datetime-local" id="fEnd"
+                       class="form-control form-control-sm bg-dark text-light border-secondary">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-info btn-sm w-100">
+                    <i class="bi bi-search me-1"></i>Search
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Events table -->
+<div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary d-flex align-items-center gap-2">
+        <i class="bi bi-list-ul text-info"></i>
+        <strong>Log Events</strong>
+        <span id="eventCount" class="badge bg-info ms-auto">0</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Timestamp</th>
+                        <th>Source</th>
+                        <th>Event Type</th>
+                        <th>Source IP</th>
+                        <th>Username</th>
+                        <th>Raw Line</th>
+                    </tr>
+                </thead>
+                <tbody id="eventsBody">
+                    <tr><td colspan="7" class="text-center text-secondary py-4">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer border-secondary d-flex align-items-center justify-content-between">
+        <small class="text-secondary">Page <span id="currentPage">1</span></small>
+        <div>
+            <button id="btnPrev" class="btn btn-sm btn-outline-secondary" disabled onclick="changePage(-1)">
+                <i class="bi bi-chevron-left"></i> Prev
+            </button>
+            <button id="btnNext" class="btn btn-sm btn-outline-secondary" onclick="changePage(1)">
+                Next <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let page = 1;
+const perPage = 50;
+
+// Load event types for the filter dropdown
+async function loadEventTypes() {
+    try {
+        const resp = await fetch('/api/events/types');
+        const types = await resp.json();
+        const sel = document.getElementById('fType');
+        types.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t; opt.textContent = t;
+            sel.appendChild(opt);
+        });
+    } catch (_) {}
+}
+
+async function loadEvents() {
+    const params = new URLSearchParams();
+    const ip = document.getElementById('fIP').value.trim();
+    const type = document.getElementById('fType').value;
+    const source = document.getElementById('fSource').value;
+    const start = document.getElementById('fStart').value;
+    const end = document.getElementById('fEnd').value;
+
+    if (ip)     params.set('source_ip', ip);
+    if (type)   params.set('event_type', type);
+    if (source) params.set('log_source', source);
+    if (start)  params.set('start_time', new Date(start).toISOString());
+    if (end)    params.set('end_time', new Date(end).toISOString());
+    params.set('page', page);
+    params.set('per_page', perPage);
+
+    try {
+        const resp = await fetch(`/api/events/?${params}`);
+        const events = await resp.json();
+        renderEvents(events);
+    } catch (err) {
+        document.getElementById('eventsBody').innerHTML =
+            `<tr><td colspan="7" class="text-center text-danger py-4">${err.message}</td></tr>`;
+    }
+}
+
+function renderEvents(events) {
+    const body = document.getElementById('eventsBody');
+    document.getElementById('eventCount').textContent = events.length;
+    document.getElementById('currentPage').textContent = page;
+    document.getElementById('btnPrev').disabled = page <= 1;
+    document.getElementById('btnNext').disabled = events.length < perPage;
+
+    if (!events.length) {
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">No events found.</td></tr>';
+        return;
+    }
+
+    body.innerHTML = events.map((e, i) => `
+        <tr>
+            <td class="text-secondary">${(page - 1) * perPage + i + 1}</td>
+            <td class="small">${new Date(e.timestamp).toLocaleString()}</td>
+            <td><span class="badge bg-secondary">${e.log_source}</span></td>
+            <td>${e.event_type}</td>
+            <td><code>${e.source_ip || '—'}</code></td>
+            <td>${e.username || '—'}</td>
+            <td class="raw-line small text-secondary" title="${escapeHtml(e.raw_line)}">${escapeHtml(truncate(e.raw_line, 80))}</td>
+        </tr>`).join('');
+}
+
+function changePage(delta) {
+    page = Math.max(1, page + delta);
+    loadEvents();
+}
+
+function resetFilters() {
+    document.getElementById('fIP').value = '';
+    document.getElementById('fType').value = '';
+    document.getElementById('fSource').value = '';
+    document.getElementById('fStart').value = '';
+    document.getElementById('fEnd').value = '';
+    page = 1;
+    loadEvents();
+}
+
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('filterForm').addEventListener('submit', (e) => {
+    e.preventDefault(); page = 1; loadEvents();
+});
+
+loadEventTypes();
+loadEvents();
+</script>
+{% endblock %}

@@ -1,0 +1,168 @@
+# 🛡️ LogSentinel
+
+**Mini SOC Log Analyzer & Alert Dashboard**
+
+A portfolio-grade security operations tool built with **Python / FastAPI** that ingests Linux `auth.log` and Nginx access logs, parses them into structured security events, and runs detection rules to surface actionable alerts — all served through a professional dark-themed dashboard.
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| **Log Upload** | Upload `.log` / `.txt` files via the web UI or API |
+| **Dual Parser** | Supports Linux auth.log (sshd) & Nginx combined access logs |
+| **Structured Events** | Every line → `timestamp`, `source_ip`, `username`, `event_type`, `raw_line` |
+| **Detection Rules** | SSH Brute Force (≥ 6 failures / 10 min), Nginx Flood (≥ 200 req / 2 min) |
+| **Alerts Dashboard** | Severity badges, filtering, dismiss/acknowledge actions |
+| **Events Browser** | Paginated table with filters (IP, type, source, time range) |
+| **REST API** | Full JSON API at `/docs` (Swagger) and `/redoc` |
+
+---
+
+## 🗂️ Project Structure
+
+```
+LogSentinel/
+├── app/
+│   ├── __init__.py            # Package metadata
+│   ├── config.py              # Paths, DB URL, constants
+│   ├── database.py            # SQLAlchemy engine + session
+│   ├── models.py              # ORM models (LogEvent, Alert)
+│   ├── schemas.py             # Pydantic request/response schemas
+│   ├── main.py                # FastAPI app + HTML routes
+│   ├── parsers/
+│   │   ├── base.py            # Abstract BaseParser
+│   │   ├── auth_log.py        # Linux auth.log parser
+│   │   └── nginx.py           # Nginx access-log parser
+│   ├── detection/
+│   │   ├── engine.py          # Sliding-window detection engine
+│   │   └── rules.py           # Rule definitions (dataclasses)
+│   ├── routers/
+│   │   ├── upload.py          # POST /api/upload/
+│   │   ├── events.py          # GET  /api/events/
+│   │   └── alerts.py          # GET  /api/alerts/
+│   └── static/
+│       ├── css/style.css      # Dark SOC theme
+│       └── js/app.js          # Client-side utilities
+├── templates/
+│   ├── base.html              # Jinja2 layout
+│   ├── dashboard.html         # Main dashboard
+│   ├── upload.html            # File upload page
+│   ├── events.html            # Events browser
+│   └── alerts.html            # Alerts viewer
+├── sample_logs/
+│   ├── auth.log               # Sample SSH auth log
+│   └── access.log             # Sample Nginx access log (generated)
+├── scripts/
+│   └── seed.py                # Generate sample logs + auto-seed
+├── uploads/                   # Uploaded files (gitignored)
+├── requirements.txt
+├── run.py                     # Convenience entry point
+└── README.md
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone & install
+
+```bash
+git clone <your-repo-url>
+cd LogSentinel
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate    # Linux / macOS
+venv\Scripts\activate       # Windows
+
+pip install -r requirements.txt
+```
+
+### 2. Generate sample logs
+
+```bash
+python -m scripts.seed
+```
+
+This creates `sample_logs/access.log` with realistic traffic including a flood pattern.
+
+### 3. Start the server
+
+```bash
+python run.py
+```
+
+The app will be available at **http://localhost:8000**
+
+### 4. Upload sample logs
+
+1. Navigate to **http://localhost:8000/upload**
+2. Upload `sample_logs/auth.log` → auto-detected as SSH log
+3. Upload `sample_logs/access.log` → auto-detected as Nginx log
+4. Go to the **Dashboard** to see stats and alerts
+
+> **Tip:** If the server is already running, you can auto-seed by running `python -m scripts.seed` in another terminal.
+
+---
+
+## 📡 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/upload/?log_type=auto` | Upload & parse a log file |
+| `GET` | `/api/events/?source_ip=...&event_type=...&page=1` | List events (filtered) |
+| `GET` | `/api/events/types` | List distinct event types |
+| `GET` | `/api/events/count` | Total event count |
+| `GET` | `/api/alerts/?severity=...&rule_name=...` | List alerts (filtered) |
+| `GET` | `/api/alerts/stats` | Alert severity breakdown |
+| `DELETE` | `/api/alerts/{id}` | Dismiss an alert |
+
+Interactive docs: **http://localhost:8000/docs**
+
+---
+
+## 🔍 Detection Rules
+
+### SSH Brute Force (HIGH)
+- **Trigger:** ≥ 6 failed SSH login attempts from the same IP within 10 minutes
+- **Event types:** `ssh_failed_login`, `ssh_invalid_user`
+
+### Nginx Request Flood (MEDIUM)
+- **Trigger:** ≥ 200 HTTP requests from the same IP within 2 minutes
+- **Event types:** `http_ok`, `http_client_error`, `http_server_error`
+
+---
+
+## 📸 Screenshots
+
+> *Replace these placeholders with actual screenshots after running the app.*
+
+### Dashboard
+![Dashboard](screenshots/dashboard.png)
+
+### Upload Page
+![Upload](screenshots/upload.png)
+
+### Events Browser
+![Events](screenshots/events.png)
+
+### Alerts Viewer
+![Alerts](screenshots/alerts.png)
+
+---
+
+## 🛠️ Tech Stack
+
+- **Backend:** Python 3.11+ / FastAPI
+- **Database:** SQLite via SQLAlchemy 2.0 (ORM)
+- **Templates:** Jinja2 + Bootstrap 5.3 (dark theme)
+- **Detection:** Custom sliding-window engine
+- **API Docs:** Swagger UI (auto-generated)
+
+---
+
+## 📄 License
+
+MIT — free for personal and commercial use.

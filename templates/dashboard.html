@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block content %}
+<!-- ── Summary cards ──────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card stat-card border-info">
+            <div class="card-body text-center">
+                <i class="bi bi-journal-text fs-2 text-info"></i>
+                <h2 class="mt-2 mb-0 fw-bold">{{ total_events }}</h2>
+                <small class="text-secondary">Total Events</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card stat-card border-warning">
+            <div class="card-body text-center">
+                <i class="bi bi-exclamation-triangle fs-2 text-warning"></i>
+                <h2 class="mt-2 mb-0 fw-bold">{{ total_alerts }}</h2>
+                <small class="text-secondary">Total Alerts</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card stat-card border-danger">
+            <div class="card-body text-center">
+                <i class="bi bi-fire fs-2 text-danger"></i>
+                <h2 class="mt-2 mb-0 fw-bold">{{ critical_alerts }}</h2>
+                <small class="text-secondary">Critical</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card stat-card border-orange">
+            <div class="card-body text-center">
+                <i class="bi bi-shield-exclamation fs-2 text-orange"></i>
+                <h2 class="mt-2 mb-0 fw-bold">{{ high_alerts }}</h2>
+                <small class="text-secondary">High</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card stat-card border-yellow">
+            <div class="card-body text-center">
+                <i class="bi bi-exclamation-circle fs-2 text-yellow"></i>
+                <h2 class="mt-2 mb-0 fw-bold">{{ medium_alerts }}</h2>
+                <small class="text-secondary">Medium</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6">
+        <div class="card stat-card border-secondary">
+            <div class="card-body text-center">
+                <i class="bi bi-globe fs-2 text-secondary"></i>
+                <h2 class="mt-2 mb-0 fw-bold">{{ unique_ips }}</h2>
+                <small class="text-secondary">Unique IPs</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- ── Recent Alerts ──────────────────────────────────────────────── -->
+    <div class="col-lg-6">
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex align-items-center gap-2 border-secondary">
+                <i class="bi bi-exclamation-triangle text-warning"></i>
+                <strong>Recent Alerts</strong>
+                <a href="/alerts" class="ms-auto btn btn-sm btn-outline-info">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_alerts %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Rule</th>
+                                <th>Source IP</th>
+                                <th>Count</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in recent_alerts %}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if a.severity == 'critical' else 'warning' if a.severity == 'high' else 'info' if a.severity == 'medium' else 'secondary' }}">
+                                        {{ a.severity | upper }}
+                                    </span>
+                                </td>
+                                <td>{{ a.rule_name }}</td>
+                                <td><code>{{ a.source_ip }}</code></td>
+                                <td>{{ a.event_count }}</td>
+                                <td class="text-secondary small">{{ a.first_seen.strftime('%Y-%m-%d %H:%M') }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-secondary py-5">
+                    <i class="bi bi-shield-check fs-1"></i>
+                    <p class="mt-2">No alerts yet. Upload a log file to begin analysis.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Recent Events ──────────────────────────────────────────────── -->
+    <div class="col-lg-6">
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex align-items-center gap-2 border-secondary">
+                <i class="bi bi-list-ul text-info"></i>
+                <strong>Recent Events</strong>
+                <a href="/events" class="ms-auto btn btn-sm btn-outline-info">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_events %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Source</th>
+                                <th>Type</th>
+                                <th>IP</th>
+                                <th>User</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for e in recent_events %}
+                            <tr>
+                                <td class="text-secondary small">{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td><span class="badge bg-secondary">{{ e.log_source }}</span></td>
+                                <td>{{ e.event_type }}</td>
+                                <td><code>{{ e.source_ip or '—' }}</code></td>
+                                <td>{{ e.username or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-secondary py-5">
+                    <i class="bi bi-journal-text fs-1"></i>
+                    <p class="mt-2">No events yet. <a href="/upload" class="text-info">Upload a log file</a> to get started.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

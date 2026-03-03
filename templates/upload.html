@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Upload{% endblock %}
+{% block nav_upload %}active{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+
+        <div class="card bg-dark border-secondary">
+            <div class="card-header border-secondary d-flex align-items-center gap-2">
+                <i class="bi bi-cloud-arrow-up text-info fs-5"></i>
+                <strong>Upload Log File</strong>
+            </div>
+            <div class="card-body">
+                <p class="text-secondary mb-4">
+                    Upload a <strong>Linux auth.log</strong> or <strong>Nginx access log</strong>
+                    file. LogSentinel will parse the file, extract structured events, and
+                    automatically run detection rules to surface security alerts.
+                </p>
+
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <!-- Log type selector -->
+                    <div class="mb-3">
+                        <label for="logType" class="form-label">Log Type</label>
+                        <select id="logType" class="form-select bg-dark text-light border-secondary">
+                            <option value="auto" selected>Auto-detect from filename</option>
+                            <option value="auth">Linux auth.log (SSH)</option>
+                            <option value="nginx">Nginx access log</option>
+                        </select>
+                    </div>
+
+                    <!-- File input -->
+                    <div class="mb-4">
+                        <label for="logFile" class="form-label">Log File</label>
+                        <input type="file" id="logFile" class="form-control bg-dark text-light border-secondary"
+                               accept=".log,.txt" required>
+                        <div class="form-text text-secondary">
+                            Accepted formats: <code>.log</code>, <code>.txt</code> — max recommended 50 MB.
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btnUpload" class="btn btn-info w-100 fw-semibold">
+                        <i class="bi bi-upload me-1"></i> Upload &amp; Analyse
+                    </button>
+                </form>
+
+                <!-- Progress + result -->
+                <div id="uploadProgress" class="mt-4 d-none">
+                    <div class="d-flex align-items-center gap-2 text-info mb-2">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span>Uploading and analysing…</span>
+                    </div>
+                    <div class="progress" style="height:6px">
+                        <div class="progress-bar bg-info progress-bar-striped progress-bar-animated"
+                             style="width:100%"></div>
+                    </div>
+                </div>
+
+                <div id="uploadResult" class="mt-4 d-none"></div>
+            </div>
+        </div>
+
+        <!-- Help card -->
+        <div class="card bg-dark border-secondary mt-3">
+            <div class="card-body small text-secondary">
+                <h6 class="text-light"><i class="bi bi-info-circle me-1"></i>Supported Formats</h6>
+                <ul class="mb-0">
+                    <li><strong>auth.log</strong> — Standard Linux/syslog SSH authentication logs
+                        (<code>sshd</code> lines with Failed/Accepted password, Invalid user, etc.)</li>
+                    <li><strong>Nginx access log</strong> — Combined log format:
+                        <code>IP - user [timestamp] "METHOD /path HTTP/x.x" status bytes "ref" "UA"</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('logFile');
+    const logType   = document.getElementById('logType').value;
+    const btn       = document.getElementById('btnUpload');
+    const progress  = document.getElementById('uploadProgress');
+    const result    = document.getElementById('uploadResult');
+
+    if (!fileInput.files.length) return;
+
+    // Show progress
+    btn.disabled = true;
+    progress.classList.remove('d-none');
+    result.classList.add('d-none');
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        const resp = await fetch(`/api/upload/?log_type=${logType}`, {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            result.innerHTML = `
+                <div class="alert alert-success border-success">
+                    <h6 class="alert-heading"><i class="bi bi-check-circle me-1"></i>Upload Successful</h6>
+                    <p class="mb-1">${data.message}</p>
+                    <hr>
+                    <div class="d-flex gap-3 small">
+                        <span><strong>File:</strong> ${data.filename}</span>
+                        <span><strong>Events:</strong> ${data.events_parsed}</span>
+                        <span><strong>Alerts:</strong> ${data.alerts_generated}</span>
+                    </div>
+                    <div class="mt-2">
+                        <a href="/events" class="btn btn-sm btn-outline-light me-1">View Events</a>
+                        <a href="/alerts" class="btn btn-sm btn-outline-warning">View Alerts</a>
+                    </div>
+                </div>`;
+        } else {
+            result.innerHTML = `
+                <div class="alert alert-danger border-danger">
+                    <i class="bi bi-x-circle me-1"></i>${data.detail || 'Upload failed.'}
+                </div>`;
+        }
+    } catch (err) {
+        result.innerHTML = `
+            <div class="alert alert-danger border-danger">
+                <i class="bi bi-x-circle me-1"></i>Network error: ${err.message}
+            </div>`;
+    } finally {
+        btn.disabled = false;
+        progress.classList.add('d-none');
+        result.classList.remove('d-none');
+    }
+});
+</script>
+{% endblock %}

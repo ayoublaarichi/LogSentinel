@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Alerts{% endblock %}
+{% block nav_alerts %}active{% endblock %}
+
+{% block content %}
+<!-- Stats cards -->
+<div class="row g-3 mb-4" id="alertStats">
+    <div class="col-md-3 col-6">
+        <div class="card stat-card border-danger text-center">
+            <div class="card-body py-3">
+                <h3 class="mb-0 fw-bold" id="statCritical">0</h3>
+                <small class="text-danger">Critical</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card border-warning text-center">
+            <div class="card-body py-3">
+                <h3 class="mb-0 fw-bold" id="statHigh">0</h3>
+                <small class="text-warning">High</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card border-info text-center">
+            <div class="card-body py-3">
+                <h3 class="mb-0 fw-bold" id="statMedium">0</h3>
+                <small class="text-info">Medium</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card border-secondary text-center">
+            <div class="card-body py-3">
+                <h3 class="mb-0 fw-bold" id="statLow">0</h3>
+                <small class="text-secondary">Low</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter bar -->
+<div class="card bg-dark border-secondary mb-3">
+    <div class="card-body py-2">
+        <form id="alertFilterForm" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-secondary mb-0">Severity</label>
+                <select id="fSev" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="">All</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary mb-0">Rule</label>
+                <select id="fRule" class="form-select form-select-sm bg-dark text-light border-secondary">
+                    <option value="">All</option>
+                    <option value="SSH Brute Force">SSH Brute Force</option>
+                    <option value="Nginx Request Flood">Nginx Request Flood</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-secondary mb-0">Source IP</label>
+                <input type="text" id="fAlertIP" class="form-control form-control-sm bg-dark text-light border-secondary"
+                       placeholder="e.g. 10.0.0.5">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-info btn-sm w-100">
+                    <i class="bi bi-search me-1"></i>Filter
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Alerts table -->
+<div class="card bg-dark border-secondary">
+    <div class="card-header border-secondary d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle text-warning"></i>
+        <strong>Security Alerts</strong>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Rule Name</th>
+                        <th>Source IP</th>
+                        <th>Event Count</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                        <th>Description</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="alertsBody">
+                    <tr><td colspan="8" class="text-center text-secondary py-4">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadStats() {
+    try {
+        const resp = await fetch('/api/alerts/stats');
+        const s = await resp.json();
+        document.getElementById('statCritical').textContent = s.critical;
+        document.getElementById('statHigh').textContent     = s.high;
+        document.getElementById('statMedium').textContent   = s.medium;
+        document.getElementById('statLow').textContent      = s.low;
+    } catch (_) {}
+}
+
+async function loadAlerts() {
+    const params = new URLSearchParams();
+    const sev  = document.getElementById('fSev').value;
+    const rule = document.getElementById('fRule').value;
+    const ip   = document.getElementById('fAlertIP').value.trim();
+
+    if (sev)  params.set('severity', sev);
+    if (rule) params.set('rule_name', rule);
+    if (ip)   params.set('source_ip', ip);
+
+    try {
+        const resp = await fetch(`/api/alerts/?${params}`);
+        const alerts = await resp.json();
+        renderAlerts(alerts);
+    } catch (err) {
+        document.getElementById('alertsBody').innerHTML =
+            `<tr><td colspan="8" class="text-center text-danger py-4">${err.message}</td></tr>`;
+    }
+}
+
+function renderAlerts(alerts) {
+    const body = document.getElementById('alertsBody');
+
+    if (!alerts.length) {
+        body.innerHTML = `
+            <tr><td colspan="8" class="text-center text-secondary py-5">
+                <i class="bi bi-shield-check fs-1 d-block mb-2"></i>
+                No alerts found. The perimeter looks clear.
+            </td></tr>`;
+        return;
+    }
+
+    body.innerHTML = alerts.map(a => {
+        const sevClass = a.severity === 'critical' ? 'danger'
+                       : a.severity === 'high'     ? 'warning'
+                       : a.severity === 'medium'   ? 'info'
+                       : 'secondary';
+        return `
+        <tr>
+            <td><span class="badge bg-${sevClass}">${a.severity.toUpperCase()}</span></td>
+            <td class="fw-semibold">${a.rule_name}</td>
+            <td><code>${a.source_ip}</code></td>
+            <td class="text-center"><span class="badge bg-dark border border-secondary">${a.event_count}</span></td>
+            <td class="small">${new Date(a.first_seen).toLocaleString()}</td>
+            <td class="small">${new Date(a.last_seen).toLocaleString()}</td>
+            <td class="small text-secondary">${a.description}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="dismissAlert(${a.id})" title="Dismiss">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function dismissAlert(id) {
+    if (!confirm('Dismiss this alert?')) return;
+    await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
+    loadAlerts();
+    loadStats();
+}
+
+document.getElementById('alertFilterForm').addEventListener('submit', (e) => {
+    e.preventDefault(); loadAlerts();
+});
+
+loadStats();
+loadAlerts();
+</script>
+{% endblock %}
