@@ -3,6 +3,7 @@ SQLAlchemy ORM models for LogSentinel — multi-tenant SIEM.
 
 Tables:
     users              – registered accounts (email + bcrypt hash)
+    projects           – per-user investigation / environment scopes
     api_keys           – per-user API ingestion keys (stored hashed)
     log_events         – parsed log events (scoped by user_id)
     alerts             – detection-engine alerts (scoped by user_id)
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -44,9 +46,34 @@ class User(Base):
     events: Mapped[list["LogEvent"]] = relationship(back_populates="owner", lazy="dynamic")
     alerts: Mapped[list["Alert"]] = relationship(back_populates="owner", lazy="dynamic")
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="owner", lazy="dynamic")
+    projects: Mapped[list["Project"]] = relationship(back_populates="owner", lazy="dynamic")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email}>"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Project (per-user scope)
+# ═══════════════════════════════════════════════════════════════════════════════
+class Project(Base):
+    __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_projects_user_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    owner: Mapped["User"] = relationship(back_populates="projects")
+    events: Mapped[list["LogEvent"]] = relationship(back_populates="project", lazy="dynamic")
+    alerts: Mapped[list["Alert"]] = relationship(back_populates="project", lazy="dynamic")
+    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="project", lazy="dynamic")
+    audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="project", lazy="dynamic")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -59,6 +86,9 @@ class ApiKey(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     label: Mapped[str] = mapped_column(String(128), nullable=False, default="default")
     key_prefix: Mapped[str] = mapped_column(String(8), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -68,6 +98,7 @@ class ApiKey(Base):
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     owner: Mapped["User"] = relationship(back_populates="api_keys")
+    project: Mapped[Optional["Project"]] = relationship(back_populates="api_keys")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -79,6 +110,9 @@ class LogEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True, index=True)
@@ -92,6 +126,7 @@ class LogEvent(Base):
     )
 
     owner: Mapped[Optional["User"]] = relationship(back_populates="events")
+    project: Mapped[Optional["Project"]] = relationship(back_populates="events")
 
     def __repr__(self) -> str:
         return f"<LogEvent id={self.id} type={self.event_type} ip={self.source_ip}>"
@@ -107,6 +142,9 @@ class Alert(Base):
     user_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     rule_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     source_ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
@@ -120,6 +158,7 @@ class Alert(Base):
     )
 
     owner: Mapped[Optional["User"]] = relationship(back_populates="alerts")
+    project: Mapped[Optional["Project"]] = relationship(back_populates="alerts")
 
     def get_usernames(self) -> list[str]:
         if not self.usernames:
@@ -165,9 +204,14 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+    project: Mapped[Optional["Project"]] = relationship(back_populates="audit_logs")

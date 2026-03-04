@@ -11,6 +11,7 @@ from app.detection.engine import run_detection
 from app.models import LogEvent, User
 from app.parsers.auth_log import AuthLogParser
 from app.parsers.nginx import NginxAccessParser
+from app.services.project_service import get_user_project_or_default
 
 router = APIRouter(prefix="/api/upload", tags=["Upload"])
 
@@ -22,11 +23,13 @@ _nginx_parser = NginxAccessParser()
 async def upload_log(
     file: UploadFile = File(...),
     log_type: str = Query("auto"),
+    project_id: int | None = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """Upload a log file, parse it, persist events, run detection."""
     content = (await file.read()).decode("utf-8", errors="replace")
+    project = get_user_project_or_default(db, user, project_id=project_id)
 
     parser = _resolve(log_type, file.filename or "unknown.log")
     parsed = parser.parse_file(content)
@@ -37,6 +40,7 @@ async def upload_log(
     db_events = [
         LogEvent(
             user_id=user.id,
+            project_id=project.id,
             timestamp=ev.timestamp,
             source_ip=ev.source_ip,
             username=ev.username,
@@ -50,7 +54,12 @@ async def upload_log(
     db.add_all(db_events)
     db.commit()
 
-    new_alerts = run_detection(db, file_name=file.filename or "unknown.log", user_id=user.id)
+    new_alerts = run_detection(
+        db,
+        file_name=file.filename or "unknown.log",
+        user_id=user.id,
+        project_id=project.id,
+    )
 
     # Broadcast new events via WebSocket
     try:
@@ -63,6 +72,7 @@ async def upload_log(
         "filename": file.filename,
         "events_parsed": len(db_events),
         "alerts_generated": len(new_alerts),
+        "project_id": project.id,
         "message": f"Parsed {len(db_events)} events, generated {len(new_alerts)} alerts.",
     }
 

@@ -82,6 +82,19 @@
 
             <!-- Right status bar -->
             <div class="d-flex align-items-center gap-3 me-1">
+                {% if user %}
+                <div class="d-none d-md-flex align-items-center gap-2">
+                    <label for="ls-global-project" class="text-muted"
+                           style="font-size:0.72rem;font-family:var(--ls-font-mono)">project</label>
+                    <select id="ls-global-project" class="form-select form-select-sm"
+                            style="min-width:170px;background:#0d1117;border-color:#30363d;color:#c9d1d9;
+                                   padding:2px 22px 2px 8px;height:28px;font-size:0.75rem;
+                                   font-family:var(--ls-font-mono)">
+                        <option value="">All visible</option>
+                    </select>
+                </div>
+                {% endif %}
+
                 <!-- Threat level pill -->
                 <div id="threatLevel"
                      class="d-none d-lg-flex align-items-center gap-1"
@@ -154,7 +167,11 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ── Threat level indicator ───────────────────────────────────────────── */
 (async () => {
     try {
-        const r = await fetch('/api/alerts/stats', { credentials: 'same-origin' });
+        const activeProjectId = localStorage.getItem('ls_active_project_id') || '';
+        const statsUrl = activeProjectId
+            ? `/api/alerts/stats?project_id=${encodeURIComponent(activeProjectId)}`
+            : '/api/alerts/stats';
+        const r = await fetch(statsUrl, { credentials: 'same-origin' });
         if (r.status === 401 || !r.ok) return;  // silently skip if not authenticated
         const s = await r.json();
         const total  = (s.critical || 0) + (s.high || 0) + (s.medium || 0);

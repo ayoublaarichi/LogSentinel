@@ -7,14 +7,15 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import distinct, func
 from sqlalchemy.orm import Session
 
 from app.database import _IS_SQLITE, get_db
 from app.dependencies import require_user
-from app.models import AuditLog, LogEvent, User
+from app.models import AuditLog, LogEvent, Project, User
 from app.schemas import LogEventOut
+from app.services.project_service import get_user_project_or_default
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
 
@@ -64,6 +65,19 @@ def _visible_user_ids(db: Session, user: User, request: Request) -> list[int]:
     return list(ids)
 
 
+def _resolve_project_filter(db: Session, user: User, project_id: Optional[int]) -> Optional[int]:
+    if project_id is None:
+        return None
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project.id
+
+
 @router.get("/", response_model=list[LogEventOut])
 @router.get("", response_model=list[LogEventOut], include_in_schema=False)
 def list_events(
@@ -72,13 +86,17 @@ def list_events(
     event_type: Optional[str] = Query(None),
     log_source: Optional[str] = Query(None),
     username: Optional[str] = Query(None),
+    project_id: Optional[int] = Query(None, ge=1),
     page: int = Query(1, ge=1),
     per_page: int = Query(100, ge=1, le=500),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[LogEventOut]:
+    project_filter = _resolve_project_filter(db, user, project_id)
     visible_ids = _visible_user_ids(db, user, request)
     q = db.query(LogEvent).filter(LogEvent.user_id.in_(visible_ids))
+    if project_filter is not None:
+        q = q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
     if source_ip:
         q = q.filter(LogEvent.source_ip == source_ip)
     if event_type:
@@ -101,6 +119,7 @@ def list_events(
 def event_timeline(
     request: Request,
     hours: int = Query(24, ge=1, le=168),
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -110,34 +129,35 @@ def event_timeline(
     """
     cutoff = datetime.utcnow() - timedelta(hours=hours)
 
+    project_filter = _resolve_project_filter(db, user, project_id)
     visible_ids = _visible_user_ids(db, user, request)
 
     if _IS_SQLITE:
         hour_expr = func.strftime("%Y-%m-%dT%H:00:00", LogEvent.timestamp)
-        rows = (
+        q = (
             db.query(
                 hour_expr.label("hour"),
                 func.count(LogEvent.id).label("count"),
             )
             .filter(LogEvent.user_id.in_(visible_ids), LogEvent.timestamp >= cutoff)
-            .group_by(hour_expr)
-            .order_by(hour_expr)
-            .all()
         )
+        if project_filter is not None:
+            q = q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+        rows = q.group_by(hour_expr).order_by(hour_expr).all()
         return [{"hour": r.hour, "count": r.count} for r in rows]
 
     # Postgres path
     hour_expr = func.date_trunc("hour", LogEvent.timestamp)
-    rows = (
+    q = (
         db.query(
             hour_expr.label("hour"),
             func.count(LogEvent.id).label("count"),
         )
         .filter(LogEvent.user_id.in_(visible_ids), LogEvent.timestamp >= cutoff)
-        .group_by(hour_expr)
-        .order_by(hour_expr)
-        .all()
     )
+    if project_filter is not None:
+        q = q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+    rows = q.group_by(hour_expr).order_by(hour_expr).all()
     return [
         {"hour": r.hour.isoformat() if hasattr(r.hour, "isoformat") else str(r.hour), "count": r.count}
         for r in rows
@@ -147,45 +167,52 @@ def event_timeline(
 @router.get("/types")
 def event_types(
     request: Request,
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[str]:
+    project_filter = _resolve_project_filter(db, user, project_id)
     visible_ids = _visible_user_ids(db, user, request)
-    rows = (
-        db.query(distinct(LogEvent.event_type))
-        .filter(LogEvent.user_id.in_(visible_ids))
-        .all()
-    )
+    rows_q = db.query(distinct(LogEvent.event_type)).filter(LogEvent.user_id.in_(visible_ids))
+    if project_filter is not None:
+        rows_q = rows_q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+    rows = rows_q.all()
     return sorted([r[0] for r in rows if r[0]])
 
 
 @router.get("/ips")
 def unique_ips(
     request: Request,
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[str]:
+    project_filter = _resolve_project_filter(db, user, project_id)
     visible_ids = _visible_user_ids(db, user, request)
-    rows = (
-        db.query(distinct(LogEvent.source_ip))
-        .filter(LogEvent.user_id.in_(visible_ids), LogEvent.source_ip.isnot(None))
-        .all()
+    rows_q = db.query(distinct(LogEvent.source_ip)).filter(
+        LogEvent.user_id.in_(visible_ids), LogEvent.source_ip.isnot(None)
     )
+    if project_filter is not None:
+        rows_q = rows_q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+    rows = rows_q.all()
     return sorted([r[0] for r in rows if r[0]])
 
 
 @router.get("/users")
 def unique_users(
     request: Request,
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[str]:
+    project_filter = _resolve_project_filter(db, user, project_id)
     visible_ids = _visible_user_ids(db, user, request)
-    rows = (
-        db.query(distinct(LogEvent.username))
-        .filter(LogEvent.user_id.in_(visible_ids), LogEvent.username.isnot(None))
-        .all()
+    rows_q = db.query(distinct(LogEvent.username)).filter(
+        LogEvent.user_id.in_(visible_ids), LogEvent.username.isnot(None)
     )
+    if project_filter is not None:
+        rows_q = rows_q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+    rows = rows_q.all()
     return sorted([r[0] for r in rows if r[0]])
 
 
@@ -193,18 +220,17 @@ def unique_users(
 def bulk_events(
     request: Request,
     limit: int = Query(5000, ge=1, le=10000),
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[LogEventOut]:
     """Return up to `limit` events in one call (used by the Events UI)."""
+    project_filter = _resolve_project_filter(db, user, project_id)
     visible_ids = _visible_user_ids(db, user, request)
-    events = (
-        db.query(LogEvent)
-        .filter(LogEvent.user_id.in_(visible_ids))
-        .order_by(LogEvent.timestamp.desc())
-        .limit(limit)
-        .all()
-    )
+    q = db.query(LogEvent).filter(LogEvent.user_id.in_(visible_ids))
+    if project_filter is not None:
+        q = q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+    events = q.order_by(LogEvent.timestamp.desc()).limit(limit).all()
     return [LogEventOut.model_validate(e) for e in events]
 
 
@@ -212,11 +238,13 @@ def bulk_events(
 def seed_events(
     request: Request,
     count: int = Query(50, ge=1, le=1000),
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """Create demo events for the current user (quick bootstrap for empty DBs)."""
     now = datetime.utcnow()
+    project = get_user_project_or_default(db, user, project_id=project_id)
     client_ip = _extract_client_ip(request) or "192.168.1.100"
     event_types = [
         "ssh_failed_login",
@@ -233,6 +261,7 @@ def seed_events(
         rows.append(
             LogEvent(
                 user_id=user.id,
+                project_id=project.id,
                 timestamp=now - timedelta(minutes=i),
                 source_ip=client_ip,
                 username=random.choice(usernames),
@@ -245,7 +274,7 @@ def seed_events(
 
     db.add_all(rows)
     db.commit()
-    return {"seeded": len(rows), "user_id": user.id, "source_ip": client_ip}
+    return {"seeded": len(rows), "user_id": user.id, "project_id": project.id, "source_ip": client_ip}
 
 
 @router.delete("/bulk")

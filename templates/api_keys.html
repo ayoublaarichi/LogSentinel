@@ -37,7 +37,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="/settings/api-keys/create" class="row g-2 align-items-end">
-                    <div class="col-md-8">
+                    <div class="col-md-5">
                         <label class="form-label small"
                                style="color:var(--ls-text-muted);text-transform:uppercase;
                                       letter-spacing:.06em;font-size:.72rem">Label</label>
@@ -47,6 +47,17 @@
                                style="font-family:var(--ls-font-mono);font-size:.85rem">
                     </div>
                     <div class="col-md-4">
+                        <label class="form-label small"
+                               style="color:var(--ls-text-muted);text-transform:uppercase;
+                                      letter-spacing:.06em;font-size:.72rem">Project</label>
+                        <select name="project_id" class="form-select bg-dark text-light border-secondary"
+                                style="font-family:var(--ls-font-mono);font-size:.85rem">
+                            {% for p in projects %}
+                            <option value="{{ p.id }}"{% if p.name == 'Default' %} selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
                         <button type="submit" class="btn btn-info w-100 fw-semibold">
                             <i class="bi bi-key me-1"></i>Generate
                         </button>
@@ -77,6 +88,7 @@
                         <thead>
                             <tr>
                                 <th>Label</th>
+                                <th>Project</th>
                                 <th>Prefix</th>
                                 <th>Created</th>
                                 <th>Status</th>
@@ -87,6 +99,13 @@
                             {% for k in keys %}
                             <tr{% if k.revoked_at %} style="opacity:0.5"{% endif %}>
                                 <td class="small fw-semibold">{{ k.label }}</td>
+                                <td class="small">
+                                    <span class="badge"
+                                          style="background:rgba(77,158,255,0.12);color:var(--ls-accent);
+                                                 border:1px solid rgba(77,158,255,0.3);font-size:.7rem">
+                                        {{ k.project.name if k.project else 'Default' }}
+                                    </span>
+                                </td>
                                 <td><code style="font-size:.8rem">{{ k.key_prefix }}••••••</code></td>
                                 <td class="small text-muted">{{ k.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                                 <td>

@@ -12,10 +12,16 @@ from typing import Optional
 import bcrypt
 from sqlalchemy.orm import Session
 
-from app.models import ApiKey
+from app.models import ApiKey, Project, User
+from app.services.project_service import get_or_create_default_project
 
 
-def generate_api_key(db: Session, user_id: int, label: str = "default") -> tuple[str, ApiKey]:
+def generate_api_key(
+    db: Session,
+    user_id: int,
+    label: str = "default",
+    project_id: Optional[int] = None,
+) -> tuple[str, ApiKey]:
     """
     Create a new API key for a user.
     Returns (plaintext_key, ApiKey ORM object).
@@ -25,8 +31,24 @@ def generate_api_key(db: Session, user_id: int, label: str = "default") -> tuple
     prefix = raw_key[:6]
     hashed = bcrypt.hashpw(raw_key.encode(), bcrypt.gensalt()).decode()
 
+    user = db.query(User).filter(User.id == user_id).first()
+    resolved_project_id = None
+    if user is not None:
+        default_project = get_or_create_default_project(db, user)
+        resolved_project_id = default_project.id
+        if project_id is not None:
+            selected_project = (
+                db.query(Project)
+                .filter(Project.id == project_id, Project.user_id == user.id)
+                .first()
+            )
+            if selected_project is None:
+                raise ValueError("Invalid project_id for this user")
+            resolved_project_id = selected_project.id
+
     api_key = ApiKey(
         user_id=user_id,
+        project_id=resolved_project_id,
         label=label.strip() or "default",
         key_prefix=prefix,
         key_hash=hashed,

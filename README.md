@@ -112,11 +112,15 @@ The app will be available at **http://localhost:8000**
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/upload/?log_type=auto` | Upload & parse a log file |
-| `GET` | `/api/events/?source_ip=...&event_type=...&page=1` | List events (filtered) |
+| `GET` | `/api/events/?source_ip=...&event_type=...&page=1&project_id=...` | List events (filtered; optional project scope) |
+| `GET` | `/api/projects/` | List projects for current user |
+| `POST` | `/api/projects/` | Create a project |
+| `PATCH` | `/api/projects/{id}` | Update project name/description |
+| `DELETE` | `/api/projects/{id}` | Delete project (reassigns data to Default) |
 | `POST` | `/api/events/seed?count=50` | Insert demo events for current account |
 | `GET` | `/api/events/types` | List distinct event types |
 | `GET` | `/api/events/count` | Total event count |
-| `GET` | `/api/alerts/?severity=...&rule_name=...` | List alerts (filtered) |
+| `GET` | `/api/alerts/?severity=...&rule_name=...&project_id=...` | List alerts (filtered; optional project scope) |
 | `GET` | `/api/alerts/stats` | Alert severity breakdown |
 | `DELETE` | `/api/alerts/{id}` | Dismiss an alert |
 
@@ -185,6 +189,29 @@ Vercel serverless instances have ephemeral local storage. Data in `/tmp` is not 
 ### Migration strategy
 
 Current startup still uses `Base.metadata.create_all(...)` for baseline schema creation. This is acceptable for MVP/bootstrap, but **not** a full migration workflow. Use **Alembic** for controlled schema evolution in persistent Postgres environments.
+
+#### Alembic commands
+
+```bash
+# apply latest migrations
+alembic upgrade head
+
+# create a new migration from model changes
+alembic revision --autogenerate -m "describe change"
+
+# inspect current DB revision
+alembic current
+```
+
+#### One-time sync for existing databases
+
+If a database already has tables created before Alembic was added, run this once:
+
+```bash
+alembic stamp head
+```
+
+This records the baseline revision without dropping data.
 
 ---
 

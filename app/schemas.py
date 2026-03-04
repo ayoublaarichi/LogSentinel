@@ -13,6 +13,7 @@ class LogEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    project_id: Optional[int] = None
     timestamp: datetime
     source_ip: Optional[str] = None
     username: Optional[str] = None
@@ -28,6 +29,7 @@ class AlertOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    project_id: Optional[int] = None
     rule_name: str
     severity: str
     source_ip: str
@@ -44,6 +46,7 @@ class AlertOut(BaseModel):
         if hasattr(obj, "get_usernames"):
             data = {
                 "id": obj.id,
+                "project_id": getattr(obj, "project_id", None),
                 "rule_name": obj.rule_name,
                 "severity": obj.severity,
                 "source_ip": obj.source_ip,

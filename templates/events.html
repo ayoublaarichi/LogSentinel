@@ -33,8 +33,21 @@
             <span id="ls-timeline-title" style="font-size:0.72rem;color:#8b949e;letter-spacing:0.04em">
                 Events over time (last 24 h)
             </span>
+            <div class="ms-auto d-flex align-items-center" style="gap:6px;margin-right:8px">
+                <label for="ls-project-select" style="font-size:0.72rem;color:#8b949e">Project</label>
+                <select id="ls-project-select" class="form-select form-select-sm"
+                        style="min-width:170px;background:#0d1117;border-color:#30363d;color:#c9d1d9;padding:2px 22px 2px 8px;height:28px">
+                    <option value="">All visible</option>
+                </select>
+                <button id="ls-project-new" class="ls-action-btn" title="Create project">
+                    <i class="bi bi-folder-plus"></i>
+                </button>
+                <button id="ls-project-delete" class="ls-action-btn" title="Delete selected project">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
             <button id="ls-seed-demo"
-                    class="ls-action-btn ms-auto" style="margin-right:8px" title="Generate demo events">
+                    class="ls-action-btn" style="margin-right:8px" title="Generate demo events">
                 <i class="bi bi-stars"></i> Seed Demo Events
             </button>
             <button onclick="window.lsApp?.reload?.()"

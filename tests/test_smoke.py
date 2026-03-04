@@ -14,6 +14,7 @@ Equivalent curl commands are included as comments for manual verification.
 """
 
 import os
+import re
 import uuid
 
 import pytest
@@ -304,3 +305,114 @@ class TestLoginNextRedirect:
         assert r.status_code == 303
         loc = r.headers.get("location", "")
         assert loc == "/", f"Expected redirect to /, got: {loc}"
+
+
+# ---------------------------------------------------------------------------
+#  8. Project CRUD + project-scoped filtering
+# ---------------------------------------------------------------------------
+
+class TestProjects:
+    @pytest.fixture(autouse=True)
+    def _login(self, client, test_email):
+        client.post("/login", data={
+            "email": test_email,
+            "password": TEST_PASSWORD,
+        })
+
+    def test_project_crud_and_scoped_seed(self, client):
+        list_r = client.get("/api/projects/")
+        assert list_r.status_code == 200
+        projects = list_r.json()
+        assert isinstance(projects, list)
+        assert any(p.get("is_default") for p in projects)
+
+        create_r = client.post("/api/projects/", json={"name": f"smoke-proj-{uuid.uuid4().hex[:6]}"})
+        assert create_r.status_code == 200
+        project = create_r.json()
+        pid = project["id"]
+
+        seed_r = client.post(f"/api/events/seed?count=2&project_id={pid}")
+        assert seed_r.status_code == 200
+        seed_body = seed_r.json()
+        assert seed_body["project_id"] == pid
+
+        bulk_r = client.get(f"/api/events/bulk?limit=50&project_id={pid}")
+        assert bulk_r.status_code == 200
+        rows = bulk_r.json()
+        assert isinstance(rows, list)
+        assert all((row.get("project_id") == pid) for row in rows)
+
+        del_r = client.delete(f"/api/projects/{pid}")
+        assert del_r.status_code == 200
+        assert del_r.json().get("deleted") == pid
+
+    def test_api_key_project_assignment_scopes_ingest(self, client):
+        create_proj = client.post("/api/projects/", json={"name": f"ingest-proj-{uuid.uuid4().hex[:6]}"})
+        assert create_proj.status_code == 200
+        pid = create_proj.json()["id"]
+
+        key_page = client.post(
+            "/settings/api-keys/create",
+            data={"label": "ingest-scoped", "project_id": str(pid)},
+        )
+        assert key_page.status_code == 200
+        html = key_page.text
+        key_match = re.search(r">([0-9a-f]{40})</code>", html)
+        assert key_match, "Expected plaintext API key in create response"
+        raw_key = key_match.group(1)
+
+        payload = {
+            "log_type": "auth",
+            "filename": "ingest-smoke.log",
+            "content": "Jan 10 12:34:56 host sshd[1234]: Failed password for root from 10.0.0.5 port 22 ssh2",
+        }
+        ingest = client.post(
+            "/api/ingest/",
+            headers={"Authorization": f"Bearer {raw_key}"},
+            json=payload,
+        )
+        assert ingest.status_code == 200
+        body = ingest.json()
+        assert body["project_id"] == pid
+
+    def test_search_and_investigate_respect_project_scope(self, client):
+        create_proj = client.post("/api/projects/", json={"name": f"search-proj-{uuid.uuid4().hex[:6]}"})
+        assert create_proj.status_code == 200
+        pid = create_proj.json()["id"]
+
+        seed_r = client.post(f"/api/events/seed?count=3&project_id={pid}")
+        assert seed_r.status_code == 200
+        seeded_ip = seed_r.json()["source_ip"]
+
+        search_r = client.get(f"/api/search?q=ip:{seeded_ip}&project_id={pid}")
+        assert search_r.status_code == 200
+        search_body = search_r.json()
+        assert search_body.get("project_id") == pid
+        events = search_body.get("events", [])
+        assert isinstance(events, list)
+        assert all((e.get("project_id") == pid) for e in events)
+
+        inv_r = client.get(f"/investigate/ip/{seeded_ip}?project_id={pid}")
+        assert inv_r.status_code == 200
+
+    def test_upload_respects_project_scope(self, client):
+        create_proj = client.post("/api/projects/", json={"name": f"upload-proj-{uuid.uuid4().hex[:6]}"})
+        assert create_proj.status_code == 200
+        pid = create_proj.json()["id"]
+
+        line = "Jan 10 12:34:56 host sshd[1234]: Failed password for root from 10.0.0.6 port 22 ssh2\n"
+        up_r = client.post(
+            f"/api/upload/?log_type=auth&project_id={pid}",
+            files={"file": ("upload-smoke.log", line.encode("utf-8"), "text/plain")},
+        )
+        assert up_r.status_code == 200
+        body = up_r.json()
+        assert body["project_id"] == pid
+        assert body["events_parsed"] >= 1
+
+        bulk_r = client.get(f"/api/events/bulk?limit=200&project_id={pid}")
+        assert bulk_r.status_code == 200
+        rows = bulk_r.json()
+        assert isinstance(rows, list)
+        assert any(r.get("file_name") == "upload-smoke.log" for r in rows)
+        assert all((row.get("project_id") == pid) for row in rows)

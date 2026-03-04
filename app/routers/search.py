@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_user
-from app.models import Alert, LogEvent, User
+from app.models import Alert, LogEvent, Project, User
 from app.templating import templates
 
 router = APIRouter(tags=["Search"])
@@ -68,26 +68,47 @@ def apply_alert_filters(query, filters: dict, user_id: int):
     return query
 
 
+def _resolve_project_filter(db: Session, user: User, project_id: Optional[int]) -> Optional[int]:
+    if project_id is None:
+        return None
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == user.id)
+        .first()
+    )
+    if not project:
+        return None
+    return project.id
+
+
 @router.get("/search", include_in_schema=False)
 def search_page(
     request: Request,
     q: str = Query("", description="Structured search query"),
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
+    project_filter = _resolve_project_filter(db, user, project_id)
     filters = parse_search_query(q) if q else {}
 
     events = []
     alerts = []
     if filters:
+        events_q = apply_event_filters(db.query(LogEvent), filters, user.id)
+        alerts_q = apply_alert_filters(db.query(Alert), filters, user.id)
+        if project_filter is not None:
+            events_q = events_q.filter(LogEvent.project_id == project_filter)
+            alerts_q = alerts_q.filter(Alert.project_id == project_filter)
+
         events = (
-            apply_event_filters(db.query(LogEvent), filters, user.id)
+            events_q
             .order_by(LogEvent.timestamp.desc())
             .limit(200)
             .all()
         )
         alerts = (
-            apply_alert_filters(db.query(Alert), filters, user.id)
+            alerts_q
             .order_by(Alert.created_at.desc())
             .limit(50)
             .all()
@@ -102,6 +123,7 @@ def search_page(
             "filters": filters,
             "events": events,
             "alerts": alerts,
+            "active_project_id": project_filter,
         },
     )
 
@@ -109,19 +131,27 @@ def search_page(
 @router.get("/api/search", tags=["Search"])
 def api_search(
     q: str = Query(..., description="Structured query (e.g. ip:1.2.3.4 severity:high)"),
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """JSON search endpoint."""
+    project_filter = _resolve_project_filter(db, user, project_id)
     filters = parse_search_query(q)
+    events_q = apply_event_filters(db.query(LogEvent), filters, user.id)
+    alerts_q = apply_alert_filters(db.query(Alert), filters, user.id)
+    if project_filter is not None:
+        events_q = events_q.filter(LogEvent.project_id == project_filter)
+        alerts_q = alerts_q.filter(Alert.project_id == project_filter)
+
     events = (
-        apply_event_filters(db.query(LogEvent), filters, user.id)
+        events_q
         .order_by(LogEvent.timestamp.desc())
         .limit(200)
         .all()
     )
     alerts = (
-        apply_alert_filters(db.query(Alert), filters, user.id)
+        alerts_q
         .order_by(Alert.created_at.desc())
         .limit(50)
         .all()
@@ -129,6 +159,7 @@ def api_search(
     from app.schemas import AlertOut, LogEventOut
     return {
         "filters": filters,
+        "project_id": project_filter,
         "events": [LogEventOut.model_validate(e) for e in events],
         "alerts": [AlertOut.model_validate(a) for a in alerts],
     }

@@ -45,6 +45,9 @@ def create_user(db: Session, email: str, password: str) -> User:
     db.add(user)
     db.commit()
     db.refresh(user)
+    from app.services.project_service import get_or_create_default_project
+
+    get_or_create_default_project(db, user)
     return user
 
 

@@ -204,12 +204,29 @@ function countUp(el, target) {
     }, dur / steps);
 }
 
+function activeProjectId() {
+    return localStorage.getItem('ls_active_project_id') || '';
+}
+
+function withProjectParams(params) {
+    const pid = activeProjectId();
+    if (pid) params.set('project_id', pid);
+    return params;
+}
+
+function eventsLinkForIp(ip) {
+    const params = new URLSearchParams({ ip });
+    withProjectParams(params);
+    return `/events?${params.toString()}`;
+}
+
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Stats
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadStats() {
     try {
-        const resp = await fetch('/api/alerts/stats', { credentials: 'same-origin' });
+        const params = withProjectParams(new URLSearchParams());
+        const resp = await fetch(`/api/alerts/stats?${params.toString()}`, { credentials: 'same-origin' });
         if (resp.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
         const s    = await resp.json();
         ['Critical', 'High', 'Medium', 'Low'].forEach(k => {
@@ -224,7 +241,7 @@ async function loadStats() {
    Load & render alert rows
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadAlerts() {
-    const params = new URLSearchParams();
+    const params = withProjectParams(new URLSearchParams());
     const sev  = document.getElementById('fSev').value;
     const rule = document.getElementById('fRule').value;
     const ip   = document.getElementById('fAlertIP').value.trim();
@@ -271,7 +288,7 @@ function renderAlerts(alerts) {
             <td>
                 <div class="d-flex align-items-center gap-2">
                     <code style="font-size:.8rem">${escHtml(a.source_ip)}</code>
-                    <a href="/events?ip=${encodeURIComponent(a.source_ip)}"
+                          <a href="${eventsLinkForIp(a.source_ip)}"
                        class="btn py-0 px-2"
                        style="font-size:.7rem;border:1px solid rgba(77,158,255,0.35);
                               color:var(--ls-accent);background:rgba(77,158,255,0.06);
@@ -344,7 +361,9 @@ async function openDetail(alertId) {
     _detailPane.show();
 
     try {
-        const resp = await fetch(`/api/alerts/${alertId}`, { credentials: 'same-origin' });
+        const params = withProjectParams(new URLSearchParams());
+        const detailUrl = `/api/alerts/${alertId}${params.toString() ? `?${params.toString()}` : ''}`;
+        const resp = await fetch(detailUrl, { credentials: 'same-origin' });
         if (resp.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const a = await resp.json();
@@ -408,7 +427,7 @@ function renderDetail(a) {
                         color:${sevColor};font-weight:600">
                 ${escHtml(a.source_ip)}
             </div>
-            <a href="/events?ip=${encodeURIComponent(a.source_ip)}"
+                <a href="${eventsLinkForIp(a.source_ip)}"
                class="btn btn-sm mt-2"
                style="font-size:.75rem;border:1px solid rgba(77,158,255,0.35);
                       color:var(--ls-accent);background:rgba(77,158,255,0.07)">
@@ -485,7 +504,7 @@ function renderDetail(a) {
         <!-- Bottom actions -->
         <div class="d-flex gap-2 pt-2"
              style="border-top:1px solid var(--ls-border)">
-            <a href="/events?ip=${encodeURIComponent(a.source_ip)}"
+                <a href="${eventsLinkForIp(a.source_ip)}"
                class="btn btn-sm flex-grow-1"
                style="border:1px solid rgba(77,158,255,0.35);
                       color:var(--ls-accent);background:rgba(77,158,255,0.07)">
@@ -506,7 +525,9 @@ function renderDetail(a) {
 async function dismissAlert(id) {
     if (!confirm('Dismiss this alert?')) return;
     _detailPane.hide();
-    await fetch(`/api/alerts/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+    const params = withProjectParams(new URLSearchParams());
+    const deleteUrl = `/api/alerts/${id}${params.toString() ? `?${params.toString()}` : ''}`;
+    await fetch(deleteUrl, { method: 'DELETE', credentials: 'same-origin' });
     loadAlerts();
     loadStats();
 }

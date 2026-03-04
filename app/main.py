@@ -28,7 +28,7 @@ from app.config import (
 )
 from app.database import get_db, init_db
 from app.dependencies import get_current_user, require_user
-from app.models import Alert, LogEvent, User
+from app.models import Alert, LogEvent, Project, User
 from app.templating import templates
 
 logger = logging.getLogger("logsentinel.app")
@@ -135,13 +135,14 @@ def options_fallback(path: str) -> Response:
 
 
 # ── Include routers ──────────────────────────────────────────────────────────
-from app.routers import alerts, auth, events, ingest, investigate, search, settings, upload  # noqa: E402
+from app.routers import alerts, auth, events, ingest, investigate, projects, search, settings, upload  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(upload.router)
 app.include_router(events.router)
 app.include_router(alerts.router)
 app.include_router(ingest.router)
+app.include_router(projects.router)
 app.include_router(settings.router)
 app.include_router(investigate.router)
 app.include_router(search.router)
@@ -153,38 +154,62 @@ app.include_router(search.router)
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def dashboard(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
-    total_events = db.query(func.count(LogEvent.id)).filter(LogEvent.user_id == user.id).scalar() or 0
-    total_alerts = db.query(func.count(Alert.id)).filter(Alert.user_id == user.id).scalar() or 0
+    project_filter = None
+    project_name = None
+    raw_project_id = request.query_params.get("project_id")
+    if raw_project_id:
+        try:
+            requested_id = int(raw_project_id)
+        except ValueError:
+            requested_id = -1
+        if requested_id < 1:
+            return JSONResponse(status_code=400, content={"detail": "Invalid project_id"})
+        project = (
+            db.query(Project)
+            .filter(Project.id == requested_id, Project.user_id == user.id)
+            .first()
+        )
+        if not project:
+            return JSONResponse(status_code=404, content={"detail": "Project not found"})
+        project_filter = project.id
+        project_name = project.name
+
+    event_base = db.query(LogEvent).filter(LogEvent.user_id == user.id)
+    alert_base = db.query(Alert).filter(Alert.user_id == user.id)
+    if project_filter is not None:
+        event_base = event_base.filter(LogEvent.project_id == project_filter)
+        alert_base = alert_base.filter(Alert.project_id == project_filter)
+
+    total_events = event_base.with_entities(func.count(LogEvent.id)).scalar() or 0
+    total_alerts = alert_base.with_entities(func.count(Alert.id)).scalar() or 0
     critical_alerts = (
-        db.query(func.count(Alert.id))
-        .filter(Alert.user_id == user.id, Alert.severity == "critical")
+        alert_base.filter(Alert.severity == "critical")
+        .with_entities(func.count(Alert.id))
         .scalar() or 0
     )
     high_alerts = (
-        db.query(func.count(Alert.id))
-        .filter(Alert.user_id == user.id, Alert.severity == "high")
+        alert_base.filter(Alert.severity == "high")
+        .with_entities(func.count(Alert.id))
         .scalar() or 0
     )
     medium_alerts = (
-        db.query(func.count(Alert.id))
-        .filter(Alert.user_id == user.id, Alert.severity == "medium")
+        alert_base.filter(Alert.severity == "medium")
+        .with_entities(func.count(Alert.id))
         .scalar() or 0
     )
     unique_ips = (
-        db.query(func.count(distinct(LogEvent.source_ip)))
-        .filter(LogEvent.user_id == user.id, LogEvent.source_ip.isnot(None))
+        event_base.filter(LogEvent.source_ip.isnot(None))
+        .with_entities(func.count(distinct(LogEvent.source_ip)))
         .scalar() or 0
     )
     recent_alerts = (
-        db.query(Alert)
-        .filter(Alert.user_id == user.id)
+        alert_base
         .order_by(Alert.created_at.desc())
         .limit(5)
         .all()
     )
     recent_events = (
-        db.query(LogEvent)
-        .filter(LogEvent.user_id == user.id)
+        event_base
         .order_by(LogEvent.timestamp.desc())
         .limit(10)
         .all()
@@ -202,6 +227,8 @@ def dashboard(request: Request, user: User = Depends(require_user), db: Session 
             "unique_ips": unique_ips,
             "recent_alerts": recent_alerts,
             "recent_events": recent_events,
+            "active_project_id": project_filter,
+            "active_project_name": project_name,
         },
     )
 

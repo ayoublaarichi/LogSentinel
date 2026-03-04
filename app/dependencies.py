@@ -14,6 +14,7 @@ from app.config import INGEST_RATE_LIMIT, INGEST_RATE_WINDOW
 from app.database import get_db
 from app.models import User
 from app.services.auth_service import get_current_user as _get_current_user
+from app.services.project_service import get_or_create_default_project
 
 logger = logging.getLogger("logsentinel.auth")
 
@@ -49,6 +50,7 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
             is_browser_document,
         )
         raise HTTPException(status_code=401, detail="Unauthorized")
+    get_or_create_default_project(db, user)
     return user
 
 
@@ -80,10 +82,12 @@ def require_api_key_user(request: Request, db: Session = Depends(get_db)) -> Use
     api_key = validate_api_key(db, raw_key)
     if api_key is None:
         raise HTTPException(status_code=401, detail="Invalid or revoked API key")
+    request.state.api_key = api_key
 
     user = db.query(User).filter(User.id == api_key.user_id).first()
     if user is None:
         raise HTTPException(status_code=401, detail="API key owner not found")
+    get_or_create_default_project(db, user)
     return user
 
 

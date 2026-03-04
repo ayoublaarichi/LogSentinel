@@ -14,6 +14,9 @@
         <div class="card bg-dark border-secondary mb-4">
             <div class="card-body py-3">
                 <form method="GET" action="/search" class="d-flex gap-2">
+                    {% if active_project_id %}
+                    <input type="hidden" name="project_id" value="{{ active_project_id }}">
+                    {% endif %}
                     <input type="text" name="q" value="{{ query }}"
                            class="form-control bg-dark text-light border-secondary"
                            placeholder='ip:192.168.1.1 severity:high rule:"SSH Brute Force" user:root type:ssh_failed_login'

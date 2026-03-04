@@ -31,6 +31,8 @@ const state = {
     chips:          [],
     loading:        false,
     threatIntel:    new Map(),
+    projects:       [],
+    activeProjectId: localStorage.getItem('ls_active_project_id') || '',
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -46,8 +48,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initComponents();
     bindActions();
     initRealtime();
+    await loadProjects();
     await loadData();
-    timeline.load(24);
+    timeline.load(24, projectQuery());
 
     // ── Pre-apply filters from the URL query string ─────────────────────
     // Supports:  /events?ip=185.220.101.23&type=ssh_failed&user=root
@@ -97,6 +100,110 @@ function bindActions() {
     if (seedBtn) {
         seedBtn.addEventListener('click', seedDemoEvents);
     }
+
+    const projectSelect = document.getElementById('ls-project-select');
+    if (projectSelect) {
+        projectSelect.addEventListener('change', async (event) => {
+            state.activeProjectId = event.target.value || '';
+            if (state.activeProjectId) localStorage.setItem('ls_active_project_id', state.activeProjectId);
+            else localStorage.removeItem('ls_active_project_id');
+            await loadData();
+            timeline.load(24, projectQuery());
+            renderProjectSelect();
+        });
+    }
+
+    document.getElementById('ls-project-new')?.addEventListener('click', createProject);
+    document.getElementById('ls-project-delete')?.addEventListener('click', deleteSelectedProject);
+}
+
+async function loadProjects() {
+    const projects = await apiFetch('/api/projects/');
+    state.projects = Array.isArray(projects) ? projects : [];
+    if (state.activeProjectId && !state.projects.some(p => String(p.id) === String(state.activeProjectId))) {
+        state.activeProjectId = '';
+        localStorage.removeItem('ls_active_project_id');
+    }
+    renderProjectSelect();
+}
+
+function renderProjectSelect() {
+    const select = document.getElementById('ls-project-select');
+    if (!select) return;
+    const options = ['<option value="">All visible</option>'];
+    for (const project of state.projects) {
+        const selected = String(project.id) === String(state.activeProjectId) ? ' selected' : '';
+        options.push(`<option value="${esc(project.id)}"${selected}>${esc(project.name)}</option>`);
+    }
+    select.innerHTML = options.join('');
+
+    const active = state.projects.find(p => String(p.id) === String(state.activeProjectId));
+    const deleteBtn = document.getElementById('ls-project-delete');
+    if (deleteBtn) deleteBtn.disabled = !active || !!active.is_default;
+}
+
+async function createProject() {
+    const name = window.prompt('New project name:');
+    if (!name || !name.trim()) return;
+    try {
+        const resp = await fetch('/api/projects/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim() }),
+        });
+        if (resp.status === 401) {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/login?next=${next}`;
+            return;
+        }
+        if (!resp.ok) throw new Error(await safeErrorMessage(resp, 'Failed to create project'));
+
+        const project = await resp.json();
+        state.activeProjectId = String(project.id);
+        localStorage.setItem('ls_active_project_id', state.activeProjectId);
+        await loadProjects();
+        await loadData();
+        timeline.load(24, projectQuery());
+        toast(`Project created: ${project.name}`, 'success');
+    } catch (err) {
+        toast(err.message || 'Failed to create project', 'error');
+    }
+}
+
+async function deleteSelectedProject() {
+    const active = state.projects.find(p => String(p.id) === String(state.activeProjectId));
+    if (!active) {
+        toast('Select a project first', 'info');
+        return;
+    }
+    if (active.is_default) {
+        toast('Default project cannot be deleted', 'info');
+        return;
+    }
+    if (!window.confirm(`Delete project "${active.name}"? Data will be reassigned to Default.`)) return;
+
+    try {
+        const resp = await fetch(`/api/projects/${active.id}`, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+        });
+        if (resp.status === 401) {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/login?next=${next}`;
+            return;
+        }
+        if (!resp.ok) throw new Error(await safeErrorMessage(resp, 'Failed to delete project'));
+
+        state.activeProjectId = '';
+        localStorage.removeItem('ls_active_project_id');
+        await loadProjects();
+        await loadData();
+        timeline.load(24, projectQuery());
+        toast(`Project deleted: ${active.name}`, 'success');
+    } catch (err) {
+        toast(err.message || 'Failed to delete project', 'error');
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -105,11 +212,12 @@ function bindActions() {
 async function loadData() {
     setLoading(true);
     try {
+        const query = projectQuery();
         const [events, ips, types, users] = await Promise.all([
-            apiFetch('/api/events/bulk?limit=5000'),
-            apiFetch('/api/events/ips'),
-            apiFetch('/api/events/types'),
-            apiFetch('/api/events/users'),
+            apiFetch(`/api/events/bulk?limit=5000${query ? `&${query}` : ''}`),
+            apiFetch(`/api/events/ips${query ? `?${query}` : ''}`),
+            apiFetch(`/api/events/types${query ? `?${query}` : ''}`),
+            apiFetch(`/api/events/users${query ? `?${query}` : ''}`),
         ]);
 
         // Enrich events with computed severity + matched rule
@@ -269,7 +377,7 @@ function initRealtime() {
             state.allEvents = [...fresh, ...state.allEvents];
             applyFilters();
             toast(`Live update: ${fresh.length} new event${fresh.length > 1 ? 's' : ''}`, 'info');
-            timeline.load(24);
+            timeline.load(24, projectQuery());
         } catch (err) {
             console.warn('[events-app] websocket parse failed', err);
         }
@@ -345,7 +453,7 @@ function onDetailAction(key, ev, extra = {}) {
             toast(`Pivoting to IP ${ev.source_ip}`, 'info');
             break;
         case 'timeline_ip':
-            timeline.load(24);
+            timeline.load(24, projectQuery());
             toast(`Timeline filtered for ${ev.source_ip}`, 'info');
             break;
         case 'copy_raw':
@@ -385,6 +493,20 @@ async function apiFetch(url) {
     }
 }
 
+function projectQuery() {
+    if (!state.activeProjectId) return '';
+    return `project_id=${encodeURIComponent(state.activeProjectId)}`;
+}
+
+async function safeErrorMessage(resp, fallback) {
+    try {
+        const body = await resp.json();
+        return body?.detail || fallback;
+    } catch {
+        return fallback;
+    }
+}
+
 async function seedDemoEvents() {
     const btn = document.getElementById('ls-seed-demo');
     let originalLabel = '';
@@ -394,7 +516,9 @@ async function seedDemoEvents() {
         btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Seeding...';
     }
     try {
-        const r = await fetch('/api/events/seed?count=50', {
+        const query = projectQuery();
+        const seedUrl = `/api/events/seed?count=50${query ? `&${query}` : ''}`;
+        const r = await fetch(seedUrl, {
             method: 'POST',
             credentials: 'same-origin',
         });
@@ -408,8 +532,9 @@ async function seedDemoEvents() {
         }
         const data = await r.json();
         toast(`Seeded ${data.seeded ?? 0} demo events`, 'success');
+        await loadProjects();
         await loadData();
-        timeline.load(24);
+        timeline.load(24, projectQuery());
     } catch (err) {
         toast(`Failed to seed demo events: ${err.message}`, 'error');
         console.error('[events-app] seed failed', err);

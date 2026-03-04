@@ -59,6 +59,10 @@ def init_db() -> None:
             for row in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
 
+        if "projects" not in table_names:
+            Base.metadata.tables["projects"].create(bind=conn, checkfirst=True)
+            table_names.add("projects")
+
         if "log_events" in table_names:
             log_event_cols = {
                 row[1] for row in conn.exec_driver_sql("PRAGMA table_info(log_events)").fetchall()
@@ -80,3 +84,15 @@ def init_db() -> None:
                 conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_alerts_user_id ON alerts(user_id)")
             if "usernames" not in alert_cols:
                 conn.exec_driver_sql("ALTER TABLE alerts ADD COLUMN usernames TEXT")
+
+        for table_name in ("log_events", "alerts", "api_keys", "audit_logs"):
+            if table_name not in table_names:
+                continue
+            cols = {
+                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()
+            }
+            if "project_id" not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN project_id INTEGER")
+                conn.exec_driver_sql(
+                    f"CREATE INDEX IF NOT EXISTS ix_{table_name}_project_id ON {table_name}(project_id)"
+                )

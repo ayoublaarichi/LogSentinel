@@ -25,9 +25,10 @@ export default class TimelineChart {
 
     /* ── Public API ─────────────────────────────────────────────────────── */
 
-    async load(hours = 24) {
+    async load(hours = 24, extraQuery = '') {
         try {
-            const resp = await fetch(`/api/events/timeline?hours=${hours}`, { credentials: 'same-origin' });
+            const qs = extraQuery ? `&${extraQuery.replace(/^\?/, '')}` : '';
+            const resp = await fetch(`/api/events/timeline?hours=${hours}${qs}`, { credentials: 'same-origin' });
             if (resp.status === 401) { window.location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); return; }
             if (!resp.ok) return;
             const data = await resp.json();

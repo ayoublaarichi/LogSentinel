@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_user
-from app.models import Alert, LogEvent, User
+from app.models import Alert, LogEvent, Project, User
 from app.services.threat_intel_service import enrich_ip
 from app.templating import templates
 
@@ -22,14 +22,39 @@ router = APIRouter(tags=["Investigate"])
 def investigate_ip_page(
     ip: str,
     request: Request,
+    project_id: Optional[int] = Query(None, ge=1),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     """IP investigation page — timeline, alerts, threat intel, targeted users."""
+    project_filter = None
+    if project_id is not None:
+        project = (
+            db.query(Project)
+            .filter(Project.id == project_id, Project.user_id == user.id)
+            .first()
+        )
+        if project:
+            project_filter = project.id
+
     # Events for this IP (user-scoped)
+    events_q = db.query(LogEvent).filter(LogEvent.user_id == user.id, LogEvent.source_ip == ip)
+    alerts_q = db.query(Alert).filter(Alert.user_id == user.id, Alert.source_ip == ip)
+    usernames_q = (
+        db.query(LogEvent.username)
+        .filter(
+            LogEvent.user_id == user.id,
+            LogEvent.source_ip == ip,
+            LogEvent.username.isnot(None),
+        )
+    )
+    if project_filter is not None:
+        events_q = events_q.filter(LogEvent.project_id == project_filter)
+        alerts_q = alerts_q.filter(Alert.project_id == project_filter)
+        usernames_q = usernames_q.filter(LogEvent.project_id == project_filter)
+
     events = (
-        db.query(LogEvent)
-        .filter(LogEvent.user_id == user.id, LogEvent.source_ip == ip)
+        events_q
         .order_by(LogEvent.timestamp.asc())
         .limit(500)
         .all()
@@ -37,23 +62,13 @@ def investigate_ip_page(
 
     # Alerts for this IP (user-scoped)
     alerts = (
-        db.query(Alert)
-        .filter(Alert.user_id == user.id, Alert.source_ip == ip)
+        alerts_q
         .order_by(Alert.created_at.desc())
         .all()
     )
 
     # Unique usernames targeted
-    usernames = (
-        db.query(LogEvent.username)
-        .filter(
-            LogEvent.user_id == user.id,
-            LogEvent.source_ip == ip,
-            LogEvent.username.isnot(None),
-        )
-        .distinct()
-        .all()
-    )
+    usernames = usernames_q.distinct().all()
     targeted_users = sorted([u[0] for u in usernames if u[0] and u[0] != "unknown"])
 
     # Threat intel
@@ -75,6 +90,7 @@ def investigate_ip_page(
             "targeted_users": targeted_users,
             "intel": intel,
             "timeline_data": timeline_data,
+            "active_project_id": project_filter,
         },
     )
 

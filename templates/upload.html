@@ -168,9 +168,11 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
+    const activeProjectId = localStorage.getItem('ls_active_project_id') || '';
+    const uploadUrl = `/api/upload/?log_type=${encodeURIComponent(logType)}${activeProjectId ? `&project_id=${encodeURIComponent(activeProjectId)}` : ''}`;
 
     try {
-        const resp = await fetch(`/api/upload/?log_type=${logType}`, {
+        const resp = await fetch(uploadUrl, {
             method: 'POST',
             body: formData,
             credentials: 'same-origin',
@@ -196,10 +198,10 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
                         <span class="t-key">alerts  </span><span class="t-val" style="color:${data.alerts_generated > 0 ? 'var(--ls-sev-high)' : '#3fb950'}">${data.alerts_generated}</span>
                     </div>
                     <div class="mt-3 d-flex gap-2">
-                        <a href="/events" class="btn btn-sm btn-outline-secondary">
+                        <a href="/events${data.project_id ? `?project_id=${encodeURIComponent(data.project_id)}` : ''}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-list-ul me-1"></i>View Events
                         </a>
-                        <a href="/alerts" class="btn btn-sm btn-outline-secondary">
+                        <a href="/alerts${data.project_id ? `?project_id=${encodeURIComponent(data.project_id)}` : ''}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-exclamation-triangle me-1"></i>View Alerts
                         </a>
                     </div>

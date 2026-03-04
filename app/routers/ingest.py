@@ -5,7 +5,7 @@ Accepts raw log text, parses it, persists events scoped to the API-key
 owner, and runs detection.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.models import LogEvent, User
 from app.parsers.auth_log import AuthLogParser
 from app.parsers.nginx import NginxAccessParser
 from app.services.auth_service import audit
+from app.services.project_service import get_user_project_or_default
 
 router = APIRouter(prefix="/api/ingest", tags=["Ingest"])
 
@@ -32,6 +33,7 @@ class IngestPayload(BaseModel):
 
 @router.post("/")
 def ingest_logs(
+    request: Request,
     payload: IngestPayload,
     user: User = Depends(require_api_key_user),
     _rl: None = Depends(rate_limit_ingest),
@@ -52,9 +54,14 @@ def ingest_logs(
     if not parsed:
         raise HTTPException(422, "No valid log lines could be parsed.")
 
+    api_key = getattr(request.state, "api_key", None)
+    project_hint = api_key.project_id if api_key is not None else None
+    project = get_user_project_or_default(db, user, project_id=project_hint)
+
     db_events = [
         LogEvent(
             user_id=user.id,
+            project_id=project.id,
             timestamp=ev.timestamp,
             source_ip=ev.source_ip,
             username=ev.username,
@@ -68,7 +75,12 @@ def ingest_logs(
     db.add_all(db_events)
     db.commit()
 
-    new_alerts = run_detection(db, file_name=payload.filename, user_id=user.id)
+    new_alerts = run_detection(
+        db,
+        file_name=payload.filename,
+        user_id=user.id,
+        project_id=project.id,
+    )
 
     audit(db, user.id, "ingest",
           f"{len(db_events)} events, {len(new_alerts)} alerts from API key")
@@ -80,6 +92,7 @@ def ingest_logs(
     return {
         "events_parsed": len(db_events),
         "alerts_generated": len(new_alerts),
+        "project_id": project.id,
         "message": f"Ingested {len(db_events)} events for user {user.email}.",
     }
 
