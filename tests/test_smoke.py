@@ -219,6 +219,12 @@ class TestEvents:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
+    def test_seed_events_endpoint(self, client):
+        r = client.post("/api/events/seed?count=3")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["seeded"] == 3
+
 
 # ---------------------------------------------------------------------------
 #  5. CORS & OPTIONS preflight

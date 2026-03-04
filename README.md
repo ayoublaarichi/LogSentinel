@@ -113,6 +113,7 @@ The app will be available at **http://localhost:8000**
 |--------|----------|-------------|
 | `POST` | `/api/upload/?log_type=auto` | Upload & parse a log file |
 | `GET` | `/api/events/?source_ip=...&event_type=...&page=1` | List events (filtered) |
+| `POST` | `/api/events/seed?count=50` | Insert demo events for current account |
 | `GET` | `/api/events/types` | List distinct event types |
 | `GET` | `/api/events/count` | Total event count |
 | `GET` | `/api/alerts/?severity=...&rule_name=...` | List alerts (filtered) |
