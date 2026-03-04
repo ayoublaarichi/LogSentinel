@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.config import SESSION_COOKIE_NAME, SESSION_COOKIE_SAMESITE
 from app.database import get_db
 from app.services.auth_service import (
     authenticate_user,
@@ -218,9 +219,29 @@ def reset_password_submit(
 @router.get("/logout", include_in_schema=False)
 def logout(request: Request, db: Session = Depends(get_db)):
     from app.services.auth_service import get_user_id_from_cookie
+
+    try:
+        request.session.clear()
+    except Exception:
+        pass
+
     uid = get_user_id_from_cookie(request)
     if uid:
         audit(db, uid, "logout", "", ip=request.client.host if request.client else "")
     response = RedirectResponse("/login", status_code=303)
     clear_session_cookie(response, request=request)
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite=SESSION_COOKIE_SAMESITE,
+        secure=True,
+    )
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite=SESSION_COOKIE_SAMESITE,
+        secure=False,
+    )
     return response

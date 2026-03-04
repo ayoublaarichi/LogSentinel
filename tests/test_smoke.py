@@ -32,31 +32,41 @@ if BASE_URL:
 
         def __init__(self, base_url: str):
             self._base = base_url.rstrip("/")
-            self._cookies: dict[str, str] = {}
+            self._client = httpx.Client(base_url=self._base, follow_redirects=False)
+
+        def close(self):
+            self._client.close()
+
+        def clear_cookies(self):
+            self._client.cookies.clear()
 
         def get(self, path, **kw):
             kw.setdefault("follow_redirects", False)
-            r = httpx.get(self._base + path, cookies=self._cookies, **kw)
-            self._cookies.update(dict(r.cookies))
-            return r
+            return self._client.get(path, **kw)
 
         def post(self, path, **kw):
             kw.setdefault("follow_redirects", False)
-            r = httpx.post(self._base + path, cookies=self._cookies, **kw)
-            self._cookies.update(dict(r.cookies))
-            return r
+            return self._client.post(path, **kw)
 
         def delete(self, path, **kw):
             kw.setdefault("follow_redirects", False)
-            r = httpx.delete(self._base + path, cookies=self._cookies, **kw)
-            self._cookies.update(dict(r.cookies))
-            return r
+            return self._client.delete(path, **kw)
 
         def options(self, path, **kw):
             kw.setdefault("follow_redirects", False)
-            r = httpx.options(self._base + path, cookies=self._cookies, **kw)
-            self._cookies.update(dict(r.cookies))
-            return r
+            return self._client.options(path, **kw)
+
+
+def _force_logout(client):
+    client.get("/logout", follow_redirects=False)
+    if hasattr(client, "clear_cookies"):
+        client.clear_cookies()
+        return
+    if hasattr(client, "cookies"):
+        try:
+            client.cookies.clear()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +76,11 @@ if BASE_URL:
 @pytest.fixture(scope="module")
 def client():
     if BASE_URL:
-        yield _LiveClient(BASE_URL)
+        live = _LiveClient(BASE_URL)
+        try:
+            yield live
+        finally:
+            live.close()
     else:
         # Import here so the Vercel-only SECRET_KEY check does not fire
         os.environ.setdefault("LOGSENTINEL_SECRET", "test-secret-not-for-production!!!")
@@ -141,6 +155,7 @@ class TestAuth:
     def test_logout_clears_session(self, client, authed_client):
         r = authed_client.get("/logout")
         assert r.status_code in (200, 303)
+        _force_logout(authed_client)
         # After logout, session-check should report unauthenticated
         r2 = authed_client.get("/api/session-check")
         assert r2.status_code == 200
@@ -156,6 +171,7 @@ class TestAuth:
 class TestUnauthenticated:
     def test_api_returns_401_json(self, client):
         """API paths must return 401 JSON, NOT a redirect."""
+        _force_logout(client)
         r = client.get("/api/events/bulk")
         assert r.status_code == 401
         body = r.json()
@@ -163,6 +179,7 @@ class TestUnauthenticated:
 
     def test_html_page_redirects_to_login(self, client):
         """Browser requests to protected HTML pages should 303 → /login."""
+        _force_logout(client)
         r = client.get("/events", headers={"Accept": "text/html"}, follow_redirects=False)
         assert r.status_code == 303
         assert "/login" in r.headers.get("location", "")
@@ -277,7 +294,7 @@ class TestLoginNextRedirect:
         """When a browser hits a protected page unauthenticated, the
         redirect to /login must include ?next=<original_path>."""
         # Ensure we are logged out first
-        client.get("/logout", follow_redirects=False)
+        _force_logout(client)
         r = client.get("/events", headers={"Accept": "text/html"}, follow_redirects=False)
         assert r.status_code == 303
         loc = r.headers.get("location", "")
