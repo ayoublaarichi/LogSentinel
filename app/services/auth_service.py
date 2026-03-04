@@ -77,12 +77,19 @@ def verify_password_reset_token(token: str) -> Optional[str]:
 
 
 # ── Session cookie helpers ───────────────────────────────────────────────────
-def create_session_cookie(response: Response, user_id: int) -> None:
+REMEMBER_ME_MAX_AGE = 86400 * 30  # 30 days
+
+
+def create_session_cookie(
+    response: Response, user_id: int, *, remember: bool = False
+) -> None:
     token = _serializer.dumps({"uid": user_id})
+    age = REMEMBER_ME_MAX_AGE if remember else SESSION_MAX_AGE
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
-        max_age=SESSION_MAX_AGE,
+        max_age=age,
+        path="/",
         httponly=True,
         samesite="lax",
         secure=False,  # set True in production behind HTTPS
@@ -90,7 +97,7 @@ def create_session_cookie(response: Response, user_id: int) -> None:
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
 
 
 def get_user_id_from_cookie(request: Request) -> Optional[int]:
@@ -98,7 +105,7 @@ def get_user_id_from_cookie(request: Request) -> Optional[int]:
     if not token:
         return None
     try:
-        data = _serializer.loads(token, max_age=SESSION_MAX_AGE)
+        data = _serializer.loads(token, max_age=REMEMBER_ME_MAX_AGE)
         return data.get("uid")
     except (BadSignature, Exception):
         return None

@@ -68,6 +68,7 @@ def login_submit(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
+    remember: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = authenticate_user(db, email, password)
@@ -79,7 +80,7 @@ def login_submit(
     audit(db, user.id, "login", f"Login: {user.email}",
           ip=request.client.host if request.client else "")
     response = RedirectResponse("/", status_code=303)
-    create_session_cookie(response, user.id)
+    create_session_cookie(response, user.id, remember=bool(remember))
     return response
 
 
