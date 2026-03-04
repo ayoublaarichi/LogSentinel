@@ -411,6 +411,9 @@ function onTableCtxMenu(ev, x, y) {
         <div class="ls-ctx-item" data-action="pivot_ip">
             <i class="bi bi-diagram-3"></i> Show all events for this IP
         </div>
+        <div class="ls-ctx-item" data-action="investigate_ip">
+            <i class="bi bi-search"></i> Investigate IP timeline
+        </div>
         <div class="ls-ctx-item" data-action="copy_raw">
             <i class="bi bi-clipboard"></i> Copy raw line
         </div>
@@ -453,8 +456,12 @@ function onDetailAction(key, ev, extra = {}) {
             toast(`Pivoting to IP ${ev.source_ip}`, 'info');
             break;
         case 'timeline_ip':
-            timeline.load(24, projectQuery());
-            toast(`Timeline filtered for ${ev.source_ip}`, 'info');
+        case 'investigate_ip':
+            if (ev.source_ip) {
+                const query = projectQuery();
+                const suffix = query ? `?${query}` : '';
+                window.location.assign(`/investigate/ip/${encodeURIComponent(ev.source_ip)}${suffix}`);
+            }
             break;
         case 'copy_raw':
             navigator.clipboard.writeText(ev.raw_line || '').then(() => toast('Raw line copied!', 'success'));

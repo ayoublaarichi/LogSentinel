@@ -433,3 +433,81 @@ class TestProjects:
         assert isinstance(rows, list)
         assert any(r.get("file_name") == "upload-smoke.log" for r in rows)
         assert all((row.get("project_id") == pid) for row in rows)
+
+
+class TestSIEMFeatures:
+    @pytest.fixture(autouse=True)
+    def _login(self, client, test_email):
+        client.post("/login", data={
+            "email": test_email,
+            "password": TEST_PASSWORD,
+        })
+
+    def test_geo_stats_endpoint(self, client):
+        seed_r = client.post("/api/events/seed?count=5")
+        assert seed_r.status_code == 200
+
+        geo_r = client.get("/api/events/geo-stats")
+        assert geo_r.status_code == 200
+        body = geo_r.json()
+        assert isinstance(body, dict)
+
+    def test_alert_ack_and_close(self, client):
+        line = "\n".join([
+            "Jan 10 12:34:50 host sshd[1234]: Failed password for root from 10.0.0.50 port 21 ssh2",
+            "Jan 10 12:34:51 host sshd[1234]: Failed password for root from 10.0.0.50 port 22 ssh2",
+            "Jan 10 12:34:52 host sshd[1234]: Failed password for root from 10.0.0.50 port 23 ssh2",
+            "Jan 10 12:34:53 host sshd[1234]: Failed password for root from 10.0.0.50 port 24 ssh2",
+            "Jan 10 12:34:54 host sshd[1234]: Failed password for root from 10.0.0.50 port 25 ssh2",
+        ]) + "\n"
+        up_r = client.post(
+            "/api/upload/?log_type=auth",
+            files={"file": ("alerts-smoke.log", line.encode("utf-8"), "text/plain")},
+        )
+        assert up_r.status_code == 200
+
+        alerts_r = client.get("/api/alerts/")
+        assert alerts_r.status_code == 200
+        alerts = alerts_r.json()
+        target = next((a for a in alerts if a.get("source_ip") == "10.0.0.50"), None)
+        assert target is not None
+
+        ack_r = client.post(f"/api/alerts/{target['id']}/ack")
+        assert ack_r.status_code == 200
+        assert ack_r.json().get("status") in {"acked", "closed"}
+
+        close_r = client.post(f"/api/alerts/{target['id']}/close")
+        assert close_r.status_code == 200
+        assert close_r.json().get("status") == "closed"
+
+    def test_investigation_timeline_api(self, client):
+        line = "Jan 10 12:34:56 host sshd[1234]: Failed password for root from 10.0.0.77 port 22 ssh2\n"
+        up_r = client.post(
+            "/api/upload/?log_type=auth",
+            files={"file": ("timeline-smoke.log", line.encode("utf-8"), "text/plain")},
+        )
+        assert up_r.status_code == 200
+
+        timeline_r = client.get("/api/investigate/timeline?ip=10.0.0.77")
+        assert timeline_r.status_code == 200
+        body = timeline_r.json()
+        assert "timeline" in body
+        assert "summary" in body
+        assert isinstance(body["timeline"], list)
+
+    def test_agents_create_api(self, client):
+        proj_r = client.get("/api/projects/")
+        assert proj_r.status_code == 200
+        projects = proj_r.json()
+        assert projects
+        pid = projects[0]["id"]
+
+        create_r = client.post(
+            "/api/agents/create",
+            json={"name": f"agent-{uuid.uuid4().hex[:5]}", "project_id": pid},
+        )
+        assert create_r.status_code == 200
+        body = create_r.json()
+        assert body.get("api_key")
+        assert body.get("install_command")
+        assert body.get("python_snippet")

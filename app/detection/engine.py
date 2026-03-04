@@ -6,6 +6,7 @@ per rule) that avoids loading every event into memory at once.
 """
 
 from datetime import timedelta
+import re
 from typing import Optional
 
 from sqlalchemy import asc
@@ -13,6 +14,9 @@ from sqlalchemy.orm import Session
 
 from app.detection.rules import ACTIVE_RULES, DetectionRule
 from app.models import Alert, LogEvent
+
+
+_PORT_RE = re.compile(r"\bport\s+(\d{1,5})\b", re.IGNORECASE)
 
 
 def run_detection(
@@ -32,6 +36,9 @@ def run_detection(
     for rule in ACTIVE_RULES:
         alerts = _evaluate_rule(db, rule, file_name, user_id, project_id)
         new_alerts.extend(alerts)
+
+    new_alerts.extend(_detect_port_scan(db, file_name, user_id, project_id))
+    new_alerts.extend(_detect_suspicious_admin_activity(db, file_name, user_id, project_id))
 
     return new_alerts
 
@@ -162,3 +169,183 @@ def _sliding_window(
     db.commit()
     db.refresh(alert)
     return alert
+
+
+def _detect_port_scan(
+    db: Session,
+    file_name: str,
+    user_id: Optional[int],
+    project_id: Optional[int],
+) -> list[Alert]:
+    base = db.query(LogEvent).filter(
+        LogEvent.file_name == file_name,
+        LogEvent.source_ip.isnot(None),
+    )
+    if user_id is not None:
+        base = base.filter(LogEvent.user_id == user_id)
+    if project_id is not None:
+        base = base.filter(LogEvent.project_id == project_id)
+
+    ip_rows = base.with_entities(LogEvent.source_ip).distinct().all()
+    generated: list[Alert] = []
+    window = timedelta(minutes=2)
+
+    for (ip,) in ip_rows:
+        events = base.filter(LogEvent.source_ip == ip).order_by(asc(LogEvent.timestamp)).all()
+        if len(events) < 10:
+            continue
+
+        left = 0
+        port_counts: dict[int, int] = {}
+        best = None
+
+        for right in range(len(events)):
+            right_ports = _extract_ports(events[right].raw_line)
+            for port in right_ports:
+                port_counts[port] = port_counts.get(port, 0) + 1
+
+            while events[right].timestamp - events[left].timestamp > window:
+                left_ports = _extract_ports(events[left].raw_line)
+                for port in left_ports:
+                    next_count = port_counts.get(port, 0) - 1
+                    if next_count <= 0:
+                        port_counts.pop(port, None)
+                    else:
+                        port_counts[port] = next_count
+                left += 1
+
+            attempts = right - left + 1
+            unique_ports = len(port_counts)
+            if attempts >= 10 and unique_ports >= 10:
+                best = (left, right, attempts, unique_ports)
+
+        if not best:
+            continue
+
+        if _alert_exists(db, "Port Scan Behavior", ip, user_id, project_id):
+            continue
+
+        b_left, b_right, attempts, unique_ports = best
+        usernames = sorted(
+            {
+                ev.username
+                for ev in events[b_left : b_right + 1]
+                if ev.username and ev.username != "unknown"
+            }
+        )
+
+        alert = Alert(
+            user_id=user_id,
+            project_id=project_id,
+            rule_name="Port Scan Behavior",
+            severity="high",
+            source_ip=ip,
+            event_count=attempts,
+            first_seen=events[b_left].timestamp,
+            last_seen=events[b_right].timestamp,
+            description=(
+                f"Detected {attempts} connection attempts from {ip} across "
+                f"{unique_ports} ports within 2 minutes."
+            ),
+            usernames=Alert.encode_usernames(usernames),
+        )
+        db.add(alert)
+        db.commit()
+        db.refresh(alert)
+        generated.append(alert)
+
+    return generated
+
+
+def _detect_suspicious_admin_activity(
+    db: Session,
+    file_name: str,
+    user_id: Optional[int],
+    project_id: Optional[int],
+) -> list[Alert]:
+    base = db.query(LogEvent).filter(LogEvent.file_name == file_name)
+    if user_id is not None:
+        base = base.filter(LogEvent.user_id == user_id)
+    if project_id is not None:
+        base = base.filter(LogEvent.project_id == project_id)
+
+    events = base.order_by(asc(LogEvent.timestamp)).all()
+    if not events:
+        return []
+
+    generated: list[Alert] = []
+    sequence_window = timedelta(seconds=30)
+
+    for index, event in enumerate(events):
+        username = (event.username or "").lower()
+        if username not in {"admin", "root"}:
+            continue
+        if event.event_type != "ssh_accepted_login":
+            continue
+        if not event.source_ip:
+            continue
+
+        if _alert_exists(db, "Suspicious Admin Activity", event.source_ip, user_id, project_id):
+            continue
+
+        trigger = None
+        for candidate in events[index + 1 :]:
+            if candidate.timestamp - event.timestamp > sequence_window:
+                break
+            message = (candidate.raw_line or "").lower()
+            if "sudo" in message or "config" in message or "modified" in message:
+                trigger = candidate
+                break
+
+        if not trigger:
+            continue
+
+        alert = Alert(
+            user_id=user_id,
+            project_id=project_id,
+            rule_name="Suspicious Admin Activity",
+            severity="critical",
+            source_ip=event.source_ip,
+            event_count=2,
+            first_seen=event.timestamp,
+            last_seen=trigger.timestamp,
+            description=(
+                f"Admin login from {event.source_ip} followed by privileged/config "
+                f"activity within 30 seconds."
+            ),
+            usernames=Alert.encode_usernames([event.username] if event.username else []),
+        )
+        db.add(alert)
+        db.commit()
+        db.refresh(alert)
+        generated.append(alert)
+
+    return generated
+
+
+def _extract_ports(raw_line: str) -> list[int]:
+    matches = _PORT_RE.findall(raw_line or "")
+    ports: list[int] = []
+    for token in matches:
+        try:
+            port = int(token)
+        except ValueError:
+            continue
+        if 0 < port <= 65535:
+            ports.append(port)
+    return ports
+
+
+def _alert_exists(
+    db: Session,
+    rule_name: str,
+    source_ip: str,
+    user_id: Optional[int],
+    project_id: Optional[int],
+) -> bool:
+    q = db.query(Alert).filter(Alert.rule_name == rule_name, Alert.source_ip == source_ip)
+    if user_id is not None:
+        q = q.filter(Alert.user_id == user_id)
+    if project_id is not None:
+        q = q.filter(Alert.project_id == project_id)
+    return q.first() is not None

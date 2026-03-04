@@ -38,6 +38,7 @@ class AlertOut(BaseModel):
     last_seen: datetime
     description: str
     usernames: list[str] = []
+    status: str = "open"
     created_at: datetime
 
     @classmethod
@@ -55,6 +56,7 @@ class AlertOut(BaseModel):
                 "last_seen": obj.last_seen,
                 "description": obj.description,
                 "usernames": obj.get_usernames(),
+                "status": getattr(obj, "status", "open"),
                 "created_at": obj.created_at,
             }
             return cls(**data)

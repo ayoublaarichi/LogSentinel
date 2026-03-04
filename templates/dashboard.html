@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}LogSentinel — Dashboard{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
 
 {% block content %}
 <!-- ── IP Info Banner ─────────────────────────────────────────────────── -->
@@ -259,6 +262,30 @@
         </div>
     </div>
 </div>
+
+<div class="row g-3 mt-1">
+    <div class="col-12">
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-globe2 text-danger"></i>
+                <strong>Attack Map — Top Attacking Countries</strong>
+                <span id="geoCount" class="badge ms-2"
+                      style="font-size:.68rem;background:rgba(255,255,255,0.06);
+                             border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">…</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <canvas id="geoChart" height="140"></canvas>
+                    </div>
+                    <div class="col-lg-6">
+                        <div id="geoTopList" class="small text-mono">Loading…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -278,6 +305,48 @@ function animateCount(el) {
     }, dur / steps);
 }
 document.querySelectorAll('.stat-num').forEach(animateCount);
+
+async function loadGeoStats() {
+    const activeProjectId = localStorage.getItem('ls_active_project_id') || '';
+    const geoUrl = activeProjectId
+        ? `/api/events/geo-stats?project_id=${encodeURIComponent(activeProjectId)}`
+        : '/api/events/geo-stats';
+
+    try {
+        const resp = await fetch(geoUrl, { credentials: 'same-origin' });
+        if (resp.status === 401 || !resp.ok) return;
+        const data = await resp.json();
+        const entries = Object.entries(data || {});
+        document.getElementById('geoCount').textContent = String(entries.length);
+
+        const top = entries.slice(0, 6);
+        const listHtml = top.length
+            ? top.map(([country, count]) => `<div class="d-flex justify-content-between py-1 border-bottom" style="border-color:var(--ls-border)!important"><span>${country}</span><span>${count}</span></div>`).join('')
+            : '<div class="text-muted">No geo event data yet.</div>';
+        document.getElementById('geoTopList').innerHTML = listHtml;
+
+        if (!top.length || typeof Chart === 'undefined') return;
+        new Chart(document.getElementById('geoChart'), {
+            type: 'bar',
+            data: {
+                labels: top.map(([country]) => country),
+                datasets: [{
+                    data: top.map(([, count]) => count),
+                    backgroundColor: 'rgba(248,81,73,0.35)',
+                    borderColor: 'rgba(248,81,73,0.8)',
+                    borderWidth: 1,
+                }],
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                    y: { beginAtZero: true, ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                },
+            },
+        });
+    } catch (_) {}
+}
 
 /* ── IP classification badge helper ──────────────────────────────────── */
 function ipBadge(cls) {
@@ -303,6 +372,8 @@ async function loadIpInfo() {
         const el = document.getElementById(id);
         el.innerHTML = (ip || '—') + (cls ? ' ' + ipBadge(cls) : '');
     };
+
+    loadGeoStats();
 
     btn.disabled = true;
     icon.className = 'spinner-border spinner-border-sm text-info';

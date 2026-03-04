@@ -24,16 +24,16 @@ class DetectionRule:
 # ── Built-in rules ───────────────────────────────────────────────────────────
 
 SSH_BRUTE_FORCE = DetectionRule(
-    name="SSH Brute Force",
+    name="Brute Force Login",
     description=(
-        "Detected {count} failed SSH login attempts from {ip} "
+        "Detected {count} failed login attempts from {ip} "
         "within {window} minutes (threshold: {threshold})."
     ),
     severity="high",
     event_types=["ssh_failed_login", "ssh_invalid_user"],
     log_source="auth",
-    threshold=6,
-    window_minutes=10,
+    threshold=5,
+    window_minutes=2,
 )
 
 NGINX_REQUEST_FLOOD = DetectionRule(

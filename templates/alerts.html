@@ -214,10 +214,11 @@ function withProjectParams(params) {
     return params;
 }
 
-function eventsLinkForIp(ip) {
+function investigateLinkForIp(ip) {
     const params = new URLSearchParams({ ip });
     withProjectParams(params);
-    return `/events?${params.toString()}`;
+    const pid = params.get('project_id');
+    return `/investigate/ip/${encodeURIComponent(ip)}${pid ? `?project_id=${encodeURIComponent(pid)}` : ''}`;
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -288,14 +289,14 @@ function renderAlerts(alerts) {
             <td>
                 <div class="d-flex align-items-center gap-2">
                     <code style="font-size:.8rem">${escHtml(a.source_ip)}</code>
-                          <a href="${eventsLinkForIp(a.source_ip)}"
+                          <a href="${investigateLinkForIp(a.source_ip)}"
                        class="btn py-0 px-2"
                        style="font-size:.7rem;border:1px solid rgba(77,158,255,0.35);
                               color:var(--ls-accent);background:rgba(77,158,255,0.06);
                               border-radius:3px;white-space:nowrap;line-height:1.6"
                        onclick="event.stopPropagation()"
                        data-bs-toggle="tooltip"
-                       title="Open Events filtered by this IP">
+                       title="Open investigation timeline for this IP">
                         <i class="bi bi-search me-1"></i>Investigate
                     </a>
                 </div>
@@ -329,11 +330,18 @@ function renderAlerts(alerts) {
                         <i class="bi bi-info-circle"></i>
                     </button>
                     <button class="btn py-0 px-2"
-                            onclick="dismissAlert(${a.id})"
+                            onclick="ackAlert(${a.id})"
+                            style="font-size:.7rem;border:1px solid rgba(77,158,255,0.35);
+                                   color:var(--ls-accent);border-radius:3px;line-height:1.6"
+                            data-bs-toggle="tooltip" title="Acknowledge alert">
+                        <i class="bi bi-check2-circle"></i>
+                    </button>
+                    <button class="btn py-0 px-2"
+                            onclick="closeAlert(${a.id})"
                             style="font-size:.7rem;border:1px solid rgba(255,45,85,0.35);
                                    color:var(--ls-sev-critical);border-radius:3px;line-height:1.6"
-                            data-bs-toggle="tooltip" title="Dismiss / delete alert">
-                        <i class="bi bi-trash"></i>
+                            data-bs-toggle="tooltip" title="Close alert">
+                        <i class="bi bi-x-circle"></i>
                     </button>
                 </div>
             </td>
@@ -412,6 +420,9 @@ function renderDetail(a) {
                 ${a.severity.toUpperCase()}
             </span>
             <span class="ms-2 fw-semibold" style="font-size:.9rem">${escHtml(a.rule_name)}</span>
+            <span class="badge ms-2" style="font-size:.7rem;background:rgba(255,255,255,0.06);border:1px solid var(--ls-border-2)">
+                ${escHtml((a.status || 'open').toUpperCase())}
+            </span>
         </div>
 
         <!-- Attacker IP prominently displayed -->
@@ -427,11 +438,11 @@ function renderDetail(a) {
                         color:${sevColor};font-weight:600">
                 ${escHtml(a.source_ip)}
             </div>
-                <a href="${eventsLinkForIp(a.source_ip)}"
+                <a href="${investigateLinkForIp(a.source_ip)}"
                class="btn btn-sm mt-2"
                style="font-size:.75rem;border:1px solid rgba(77,158,255,0.35);
                       color:var(--ls-accent);background:rgba(77,158,255,0.07)">
-                <i class="bi bi-search me-1"></i>Investigate IP in Events
+                <i class="bi bi-search me-1"></i>Investigate IP Timeline
             </a>
         </div>
 
@@ -504,17 +515,23 @@ function renderDetail(a) {
         <!-- Bottom actions -->
         <div class="d-flex gap-2 pt-2"
              style="border-top:1px solid var(--ls-border)">
-                <a href="${eventsLinkForIp(a.source_ip)}"
+                <a href="${investigateLinkForIp(a.source_ip)}"
                class="btn btn-sm flex-grow-1"
                style="border:1px solid rgba(77,158,255,0.35);
                       color:var(--ls-accent);background:rgba(77,158,255,0.07)">
-                <i class="bi bi-search me-1"></i>Investigate in Events
+                <i class="bi bi-search me-1"></i>Investigate Timeline
             </a>
             <button class="btn btn-sm"
-                    onclick="dismissAlert(${a.id})"
+                    onclick="ackAlert(${a.id})"
+                    style="border:1px solid rgba(77,158,255,0.35);
+                           color:var(--ls-accent);background:rgba(77,158,255,0.06)">
+                <i class="bi bi-check2-circle me-1"></i>Ack
+            </button>
+            <button class="btn btn-sm"
+                    onclick="closeAlert(${a.id})"
                     style="border:1px solid rgba(255,45,85,0.35);
                            color:var(--ls-sev-critical);background:rgba(255,45,85,0.06)">
-                <i class="bi bi-trash me-1"></i>Dismiss
+                <i class="bi bi-x-circle me-1"></i>Close
             </button>
         </div>`;
 }
@@ -522,12 +539,20 @@ function renderDetail(a) {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Dismiss alert
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-async function dismissAlert(id) {
-    if (!confirm('Dismiss this alert?')) return;
+async function ackAlert(id) {
+    const params = withProjectParams(new URLSearchParams());
+    const ackUrl = `/api/alerts/${id}/ack${params.toString() ? `?${params.toString()}` : ''}`;
+    await fetch(ackUrl, { method: 'POST', credentials: 'same-origin' });
+    loadAlerts();
+    loadStats();
+}
+
+async function closeAlert(id) {
+    if (!confirm('Close this alert?')) return;
     _detailPane.hide();
     const params = withProjectParams(new URLSearchParams());
-    const deleteUrl = `/api/alerts/${id}${params.toString() ? `?${params.toString()}` : ''}`;
-    await fetch(deleteUrl, { method: 'DELETE', credentials: 'same-origin' });
+    const closeUrl = `/api/alerts/${id}/close${params.toString() ? `?${params.toString()}` : ''}`;
+    await fetch(closeUrl, { method: 'POST', credentials: 'same-origin' });
     loadAlerts();
     loadStats();
 }

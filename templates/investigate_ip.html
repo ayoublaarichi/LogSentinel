@@ -187,7 +187,40 @@
                 <strong>Attack Timeline</strong>
             </div>
             <div class="card-body">
+                <div class="mb-3 p-2"
+                     style="background:rgba(255,255,255,0.04);border:1px solid var(--ls-border);border-radius:6px">
+                    <div style="font-size:.72rem;text-transform:uppercase;color:var(--ls-text-dim)">Attack Summary</div>
+                    <div class="small" style="color:var(--ls-text-muted)">{{ timeline_summary }}</div>
+                </div>
                 <canvas id="attackTimeline" height="120"></canvas>
+            </div>
+        </div>
+
+        <div class="card bg-dark border-secondary mt-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-clock-history text-info"></i>
+                <strong>SOC Investigation Timeline</strong>
+            </div>
+            <div class="card-body">
+                {% if timeline_data %}
+                <ul class="list-unstyled mb-0">
+                    {% for item in timeline_data %}
+                    <li class="mb-2 pb-2" style="border-bottom:1px solid var(--ls-border)">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge" style="background:rgba(77,158,255,0.1);color:var(--ls-accent)">{{ item.ts[11:] }}</span>
+                            <span class="small text-mono">{{ item.type }}</span>
+                            <span class="badge ms-1"
+                                  style="background:rgba(255,255,255,0.06);border:1px solid var(--ls-border-2);font-size:.65rem">
+                                {{ item.category }}
+                            </span>
+                        </div>
+                        <div class="small text-muted mt-1">{{ item.raw }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-muted small">No timeline events for this IP in the selected scope.</div>
+                {% endif %}
             </div>
         </div>
 

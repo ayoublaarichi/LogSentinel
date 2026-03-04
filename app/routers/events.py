@@ -16,6 +16,7 @@ from app.dependencies import require_user
 from app.models import AuditLog, LogEvent, Project, User
 from app.schemas import LogEventOut
 from app.services.project_service import get_user_project_or_default
+from app.services.threat_intel_service import enrich_ip
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
 
@@ -76,6 +77,35 @@ def _resolve_project_filter(db: Session, user: User, project_id: Optional[int]) 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project.id
+
+
+def _country_code(country: str) -> str:
+    if not country:
+        return "ZZ"
+    value = country.strip()
+    if len(value) == 2 and value.isalpha():
+        return value.upper()
+    mapping = {
+        "United States": "US",
+        "United Kingdom": "GB",
+        "Germany": "DE",
+        "France": "FR",
+        "China": "CN",
+        "Russia": "RU",
+        "Brazil": "BR",
+        "Netherlands": "NL",
+        "India": "IN",
+        "Canada": "CA",
+        "Japan": "JP",
+        "Private": "PR",
+        "Unknown": "ZZ",
+    }
+    if value in mapping:
+        return mapping[value]
+    parts = [p for p in value.split() if p]
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return value[:2].upper()
 
 
 @router.get("/", response_model=list[LogEventOut])
@@ -162,6 +192,44 @@ def event_timeline(
         {"hour": r.hour.isoformat() if hasattr(r.hour, "isoformat") else str(r.hour), "count": r.count}
         for r in rows
     ]
+
+
+@router.get("/geo-stats")
+def event_geo_stats(
+    request: Request,
+    hours: int = Query(168, ge=1, le=720),
+    project_id: Optional[int] = Query(None, ge=1),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    project_filter = _resolve_project_filter(db, user, project_id)
+    visible_ids = _visible_user_ids(db, user, request)
+
+    rows_q = (
+        db.query(LogEvent.source_ip, func.count(LogEvent.id).label("count"))
+        .filter(
+            LogEvent.user_id.in_(visible_ids),
+            LogEvent.source_ip.isnot(None),
+            LogEvent.timestamp >= cutoff,
+        )
+    )
+    if project_filter is not None:
+        rows_q = rows_q.filter(LogEvent.user_id == user.id, LogEvent.project_id == project_filter)
+    rows = (
+        rows_q
+        .group_by(LogEvent.source_ip)
+        .order_by(func.count(LogEvent.id).desc())
+        .limit(200)
+        .all()
+    )
+
+    counts: dict[str, int] = {}
+    for source_ip, count in rows:
+        intel = enrich_ip(db, source_ip)
+        code = _country_code(str(intel.get("country") or "Unknown"))
+        counts[code] = counts.get(code, 0) + int(count)
+    return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
 
 
 @router.get("/types")

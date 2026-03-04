@@ -27,7 +27,7 @@ function applyProjectToNavLinks() {
     const projectId = activeProjectId();
     if (!projectId) return;
 
-    const navPaths = ['/', '/upload', '/events', '/alerts', '/search'];
+    const navPaths = ['/', '/upload', '/events', '/alerts', '/search', '/agents'];
     document.querySelectorAll('.navbar .nav-link[href]').forEach(link => {
         try {
             const url = new URL(link.getAttribute('href'), window.location.origin);

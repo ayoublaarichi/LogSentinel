@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Agents{% endblock %}
+{% block nav_agents %}active{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card bg-dark border-secondary mb-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-hdd-stack text-info"></i>
+                <strong>Agent Installer</strong>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3" style="font-size:.9rem">
+                    Create a host agent key and copy a one-line install command.
+                </p>
+                <form id="agentCreateForm" class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small" style="color:var(--ls-text-muted)">Agent Name</label>
+                        <input id="agentName" class="form-control bg-dark text-light border-secondary"
+                               value="prod-host-01" maxlength="64" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small" style="color:var(--ls-text-muted)">Project</label>
+                        <select id="agentProject" class="form-select bg-dark text-light border-secondary">
+                            {% for p in projects %}
+                            <option value="{{ p.id }}"{% if p.name == 'Default' %} selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button id="agentCreateBtn" class="btn btn-info w-100" type="submit">
+                            <i class="bi bi-plus-circle me-1"></i>Create Agent
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="agentOutput" class="card bg-dark border-secondary d-none">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-terminal text-info"></i>
+                <strong>Installer Output</strong>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label small" style="color:var(--ls-text-muted)">API Key (copy once)</label>
+                    <code id="agentApiKey" class="d-block p-2" style="word-break:break-all;background:rgba(0,0,0,0.3)"></code>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small" style="color:var(--ls-text-muted)">Linux Install Command</label>
+                    <code id="agentInstallCommand" class="d-block p-2" style="word-break:break-all;background:rgba(0,0,0,0.3)"></code>
+                </div>
+                <div>
+                    <label class="form-label small" style="color:var(--ls-text-muted)">Python Agent Snippet</label>
+                    <pre id="agentPythonSnippet" class="p-2" style="background:rgba(0,0,0,0.3);font-size:.78rem;max-height:260px;overflow:auto"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('agentCreateForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const btn = document.getElementById('agentCreateBtn');
+    btn.disabled = true;
+
+    const payload = {
+        name: document.getElementById('agentName').value.trim(),
+        project_id: Number(document.getElementById('agentProject').value),
+    };
+
+    try {
+        const resp = await fetch('/api/agents/create', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (resp.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(location.pathname);
+            return;
+        }
+        const data = await resp.json();
+        if (!resp.ok) {
+            throw new Error(data.detail || 'Failed to create agent');
+        }
+
+        document.getElementById('agentApiKey').textContent = data.api_key;
+        document.getElementById('agentInstallCommand').textContent = data.install_command;
+        document.getElementById('agentPythonSnippet').textContent = data.python_snippet;
+        document.getElementById('agentOutput').classList.remove('d-none');
+    } catch (err) {
+        alert(err.message || 'Failed to create agent');
+    } finally {
+        btn.disabled = false;
+    }
+});
+</script>
+{% endblock %}
