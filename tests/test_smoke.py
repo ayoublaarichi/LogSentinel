@@ -248,3 +248,44 @@ class TestTrailingSlash:
         """With redirect_slashes=False the app must not 307-redirect API calls."""
         r = client.get("/api/events/bulk?limit=1")
         assert r.status_code == 200, f"Expected 200, got {r.status_code}"
+
+
+# ---------------------------------------------------------------------------
+#  7. Login ?next= redirect flow
+# ---------------------------------------------------------------------------
+# curl -s -o /dev/null -w '%{http_code}\n%{redirect_url}' \
+#   -H 'Accept: text/html' .../events  → 303  .../login?next=%2Fevents
+
+class TestLoginNextRedirect:
+    def test_401_redirect_preserves_next(self, client):
+        """When a browser hits a protected page unauthenticated, the
+        redirect to /login must include ?next=<original_path>."""
+        # Ensure we are logged out first
+        client.get("/logout", follow_redirects=False)
+        r = client.get("/events", headers={"Accept": "text/html"}, follow_redirects=False)
+        assert r.status_code == 303
+        loc = r.headers.get("location", "")
+        assert "/login" in loc
+        assert "next=" in loc, f"Expected ?next= in Location header, got: {loc}"
+
+    def test_login_post_with_next(self, client, test_email):
+        """POST /login with next= should redirect to the specified path."""
+        r = client.post("/login", data={
+            "email": test_email,
+            "password": TEST_PASSWORD,
+            "next": "/events",
+        }, follow_redirects=False)
+        assert r.status_code == 303
+        loc = r.headers.get("location", "")
+        assert loc == "/events", f"Expected redirect to /events, got: {loc}"
+
+    def test_login_post_blocks_open_redirect(self, client, test_email):
+        """next= pointing to an external URL must be ignored (redirect to /)."""
+        r = client.post("/login", data={
+            "email": test_email,
+            "password": TEST_PASSWORD,
+            "next": "https://evil.example.com/steal",
+        }, follow_redirects=False)
+        assert r.status_code == 303
+        loc = r.headers.get("location", "")
+        assert loc == "/", f"Expected redirect to /, got: {loc}"

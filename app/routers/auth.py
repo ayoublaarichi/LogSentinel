@@ -58,7 +58,8 @@ def signup_submit(
 @router.get("/login", include_in_schema=False)
 def login_page(request: Request):
     info = "Password updated. Please sign in." if request.query_params.get("reset") == "1" else None
-    return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info})
+    next_url = request.query_params.get("next", "/")
+    return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info, "next": next_url})
 
 
 @router.post("/login", include_in_schema=False)
@@ -67,17 +68,20 @@ def login_submit(
     email: str = Form(...),
     password: str = Form(...),
     remember: str = Form(""),
+    next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
     user = authenticate_user(db, email, password)
     if not user:
         return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Invalid email or password.", "info": None}
+            "login.html", {"request": request, "error": "Invalid email or password.", "info": None, "next": next}
         )
 
     audit(db, user.id, "login", f"Login: {user.email}",
           ip=request.client.host if request.client else "")
-    response = RedirectResponse("/", status_code=303)
+    # Sanitise redirect target — only allow relative paths to prevent open-redirect.
+    redirect_to = next if next.startswith("/") else "/"
+    response = RedirectResponse(redirect_to, status_code=303)
     create_session_cookie(response, user.id, remember=bool(remember), request=request)
     return response
 

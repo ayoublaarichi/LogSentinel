@@ -90,7 +90,15 @@ def _wants_html(request: Request) -> bool:
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code == 401:
         if _wants_html(request):
-            return RedirectResponse("/login", status_code=303)
+            # Preserve the original URL so login can redirect back.
+            from urllib.parse import quote
+            next_url = str(request.url.path)
+            qs = str(request.url.query)
+            if qs:
+                next_url = f"{next_url}?{qs}"
+            login_url = f"/login?next={quote(next_url, safe='')}"
+            logger.info("401 → redirecting browser to %s", login_url)
+            return RedirectResponse(login_url, status_code=303)
         return JSONResponse({"detail": exc.detail}, status_code=401)
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 

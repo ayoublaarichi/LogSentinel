@@ -301,11 +301,17 @@ function onDetailAction(key, ev, extra = {}) {
 async function apiFetch(url) {
     const r = await fetch(url, { credentials: 'same-origin' });
     if (r.status === 401) {
-        // Session expired — redirect to login
-        window.location.href = '/login';
+        // Session expired — redirect to login, preserving current page
+        console.warn(`[apiFetch] 401 on ${url} — redirecting to /login`);
+        toast('Session expired — please log in again.', 'error');
+        const next = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/login?next=${next}`;
         throw new Error('Session expired');
     }
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    if (!r.ok) {
+        console.error(`[apiFetch] ${r.status} ${r.statusText} on ${url}`);
+        throw new Error(`${r.status} ${r.statusText}`);
+    }
     return r.json();
 }
 
