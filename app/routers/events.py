@@ -107,6 +107,23 @@ def unique_users(
     return sorted([r[0] for r in rows if r[0]])
 
 
+@router.get("/bulk", response_model=list[LogEventOut])
+def bulk_events(
+    limit: int = Query(5000, ge=1, le=10000),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> list[LogEventOut]:
+    """Return up to `limit` events in one call (used by the Events UI)."""
+    events = (
+        db.query(LogEvent)
+        .filter(LogEvent.user_id == user.id)
+        .order_by(LogEvent.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+    return [LogEventOut.model_validate(e) for e in events]
+
+
 @router.delete("/bulk")
 def bulk_delete(
     source_ip: Optional[str] = Query(None),
