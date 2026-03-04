@@ -273,9 +273,7 @@
 .ls-cell-num   { color: #484f58; font-variant-numeric: tabular-nums; }
 .ls-cell-ts    { font-family: 'JetBrains Mono', monospace; font-size: 0.77rem; color: #8b949e; }
 .ls-cell-ip    { font-family: 'JetBrains Mono', monospace; color: #58a6ff; }
-.ls-cell-type  { }
 .ls-cell-user  { color: #d2a8ff; }
-.ls-cell-src   { }
 
 /* ── Severity / Wireshark color rules ────────────────────────────────────── */
 .row-critical   { background: rgba(180,  0,  0, 0.15) !important; }

@@ -61,6 +61,11 @@ def investigate_ip_page(
     # Threat intel
     intel = enrich_ip(db, ip)
 
+    timeline_data = [
+        {"ts": e.timestamp.strftime("%Y-%m-%dT%H:%M:%S"), "type": e.event_type}
+        for e in events
+    ]
+
     return templates.TemplateResponse(
         "investigate_ip.html",
         {
@@ -71,6 +76,7 @@ def investigate_ip_page(
             "alerts": alerts,
             "targeted_users": targeted_users,
             "intel": intel,
+            "timeline_data": timeline_data,
         },
     )
 

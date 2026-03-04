@@ -5,7 +5,7 @@ SQLite supports ALTER TABLE ... ADD COLUMN since SQLite 3.1.3.
 This script is idempotent – running it twice is safe.
 
 Usage:
-    .\.venv\Scripts\python.exe -m scripts.migrate_add_usernames
+    .\\.venv\\Scripts\\python.exe -m scripts.migrate_add_usernames
 """
 
 import sqlite3
