@@ -8,13 +8,18 @@ from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
-UPLOAD_DIR: Path = BASE_DIR / "uploads"
-SAMPLE_LOGS_DIR: Path = BASE_DIR / "sample_logs"
 TEMPLATES_DIR: Path = BASE_DIR / "templates"
 STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
+SAMPLE_LOGS_DIR: Path = BASE_DIR / "sample_logs"
+
+# Vercel serverless uses a read-only filesystem; /tmp is the only writable area.
+_ON_VERCEL: bool = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_URL"))
+_DATA_DIR: Path = Path("/tmp") if _ON_VERCEL else BASE_DIR
+
+UPLOAD_DIR: Path = _DATA_DIR / "uploads"
 
 # ── Database ─────────────────────────────────────────────────────────────────
-DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'logsentinel.db'}"
+DATABASE_URL: str = f"sqlite:///{_DATA_DIR / 'logsentinel.db'}"
 
 # ── Application ──────────────────────────────────────────────────────────────
 APP_TITLE: str = "LogSentinel"
@@ -35,4 +40,7 @@ INGEST_RATE_WINDOW: int = 60         # window in seconds
 THREAT_INTEL_CACHE_TTL: int = 3600   # 1 hour
 
 # Ensure upload directory exists at import time
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass  # read-only filesystem fallback
