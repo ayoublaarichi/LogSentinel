@@ -4,18 +4,16 @@ Settings router — API key management page.
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.config import TEMPLATES_DIR
 from app.database import get_db
 from app.dependencies import require_user
 from app.models import User
 from app.services.api_key_service import generate_api_key, list_user_keys, revoke_api_key
 from app.services.auth_service import audit
+from app.templating import templates
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @router.get("/api-keys", include_in_schema=False)

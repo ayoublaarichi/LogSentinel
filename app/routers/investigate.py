@@ -6,18 +6,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.config import TEMPLATES_DIR
 from app.database import get_db
 from app.dependencies import require_user
 from app.models import Alert, LogEvent, User
 from app.services.threat_intel_service import enrich_ip
+from app.templating import templates
 
 router = APIRouter(tags=["Investigate"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @router.get("/investigate/ip/{ip}", include_in_schema=False)

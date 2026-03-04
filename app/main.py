@@ -12,7 +12,6 @@ import httpx
 from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import distinct, func
 from sqlalchemy.orm import Session
 
@@ -22,10 +21,12 @@ from app.config import (
     APP_VERSION,
     STATIC_DIR,
     TEMPLATES_DIR,
+    _ON_VERCEL,
 )
 from app.database import get_db, init_db
 from app.dependencies import get_current_user, require_user
 from app.models import Alert, LogEvent, User
+from app.templating import templates
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
@@ -44,7 +45,6 @@ app = FastAPI(
 
 # ── Static files ─────────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 # ── 401 handler — redirect browsers to /login ───────────────────────────────
@@ -155,13 +155,65 @@ def alerts_page(request: Request, user: User = Depends(require_user)):
 #  Utility API
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/api/ip", tags=["Utility"])
+@app.get("/api/whoami", tags=["Utility"])
+def whoami(request: Request, user: User = Depends(require_user)) -> dict:
+    """Return authenticated user context + network identity with IP classification."""
+    client_ip = _extract_client_ip(request)
+    server_lan = _get_lan_ip()
+    server_wan = _get_wan_ip()
+    return {
+        "email": user.email,
+        "client_ip": client_ip,
+        "client_ip_class": _classify_ip(client_ip),
+        "server_lan": server_lan,
+        "server_lan_class": _classify_ip(server_lan),
+        "server_wan": server_wan,
+        "server_wan_class": _classify_ip(server_wan),
+        "environment": "cloud" if _ON_VERCEL else "self-hosted",
+    }
+
+
+# Keep legacy /api/ip for backward compatibility (no auth required)
+@app.get("/api/ip", tags=["Utility"], include_in_schema=False)
 def get_ip_info(request: Request) -> dict:
-    """Return client IP, server LAN IP, and public WAN IP."""
-    client_ip = request.client.host if request.client else "unknown"
+    """Legacy IP endpoint — prefer /api/whoami."""
+    client_ip = _extract_client_ip(request)
     server_lan = _get_lan_ip()
     server_wan = _get_wan_ip()
     return {"client_ip": client_ip, "server_lan": server_lan, "server_wan": server_wan}
+
+
+def _extract_client_ip(request: Request) -> str:
+    """Extract real client IP, respecting X-Forwarded-For on cloud."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _classify_ip(ip: str) -> str:
+    """Classify an IP as private, loopback, demo, cloud-proxy, or public."""
+    if not ip or ip in ("unavailable", "unknown"):
+        return "unavailable"
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(ip)
+        if addr.is_loopback:
+            return "loopback"
+        if addr.is_private:
+            return "private"
+        # Well-known demo/documentation ranges
+        demo_nets = [
+            ipaddress.ip_network("192.0.2.0/24"),     # TEST-NET-1
+            ipaddress.ip_network("198.51.100.0/24"),   # TEST-NET-2
+            ipaddress.ip_network("203.0.113.0/24"),    # TEST-NET-3
+        ]
+        for net in demo_nets:
+            if addr in net:
+                return "demo"
+        return "public"
+    except ValueError:
+        return "unknown"
 
 
 def _get_lan_ip() -> str:

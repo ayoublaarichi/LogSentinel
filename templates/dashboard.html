@@ -10,6 +10,12 @@
             <i class="bi bi-router icon-glow-accent fs-5"></i>
             <span style="font-size:0.78rem;font-weight:600;color:var(--ls-text-muted);
                          letter-spacing:0.06em;text-transform:uppercase">Network Identity</span>
+            <span id="envBadge" class="badge d-none"
+                  style="font-size:0.58rem;padding:2px 6px;border-radius:3px;
+                         background:rgba(188,140,255,0.12);color:#bc8cff;
+                         border:1px solid rgba(188,140,255,0.35);letter-spacing:.04em">
+                <i class="bi bi-cloud me-1"></i>CLOUD
+            </span>
         </span>
 
         <span class="ip-item">
@@ -58,9 +64,9 @@
     </div>
     <div class="mt-2 pt-2" style="border-top:1px solid var(--ls-border)">
         <small style="font-size:0.71rem;color:var(--ls-text-dim)">
-            <i class="bi bi-database me-1"></i>
-            All connected devices share the same events &amp; alerts — one shared database on the server.
-            Your&nbsp;Device&nbsp;IP is unique per client you access from.
+            <i class="bi bi-shield-lock me-1"></i>
+            Multi-tenant isolation — each user sees only their own events &amp; alerts.
+            Your&nbsp;Device&nbsp;IP identifies the browser you are connecting from.
         </small>
     </div>
 </div>
@@ -271,12 +277,30 @@ function animateCount(el) {
 }
 document.querySelectorAll('.stat-num').forEach(animateCount);
 
-/* ── IP info loader ──────────────────────────────────────────────────── */
+/* ── IP classification badge helper ──────────────────────────────────── */
+function ipBadge(cls) {
+    const map = {
+        'public':    { text: 'PUBLIC',    bg: 'rgba(63,185,80,0.15)', color: '#3fb950',  border: 'rgba(63,185,80,0.4)' },
+        'private':   { text: 'PRIVATE',   bg: 'rgba(77,158,255,0.12)', color: '#4d9eff', border: 'rgba(77,158,255,0.35)' },
+        'loopback':  { text: 'LOOPBACK',  bg: 'rgba(139,148,158,0.12)', color: '#8b949e', border: 'rgba(139,148,158,0.3)' },
+        'demo':      { text: 'DEMO',      bg: 'rgba(210,153,34,0.15)', color: '#d29922',  border: 'rgba(210,153,34,0.4)' },
+        'cloud-proxy':{ text: 'PROXY',    bg: 'rgba(188,140,255,0.12)', color: '#bc8cff', border: 'rgba(188,140,255,0.35)' },
+    };
+    const s = map[cls] || { text: cls?.toUpperCase() || '?', bg: 'rgba(255,255,255,0.05)', color: '#8b949e', border: 'rgba(255,255,255,0.1)' };
+    return `<span class="badge ms-1" style="font-size:0.58rem;padding:1px 5px;border-radius:3px;
+            background:${s.bg};color:${s.color};border:1px solid ${s.border};
+            font-family:var(--ls-font-mono);letter-spacing:.04em">${s.text}</span>`;
+}
+
+/* ── Network identity loader (uses authenticated /api/whoami) ────────── */
 async function loadIpInfo() {
     const btn      = document.getElementById('btnRefreshIp');
     const icon     = document.getElementById('refreshIcon');
     const errBadge = document.getElementById('ipError');
-    const setVal   = (id, val) => document.getElementById(id).textContent = val || '—';
+    const setVal   = (id, ip, cls) => {
+        const el = document.getElementById(id);
+        el.innerHTML = (ip || '—') + (cls ? ' ' + ipBadge(cls) : '');
+    };
 
     btn.disabled = true;
     icon.className = 'spinner-border spinner-border-sm text-info';
@@ -288,13 +312,19 @@ async function loadIpInfo() {
     try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 8000);
-        const resp = await fetch('/api/ip', { signal: controller.signal });
+        const resp = await fetch('/api/whoami', { signal: controller.signal });
         clearTimeout(tid);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const d = await resp.json();
-        setVal('ipClient', d.client_ip);
-        setVal('ipLan',    d.server_lan);
-        setVal('ipWan',    d.server_wan);
+        setVal('ipClient', d.client_ip, d.client_ip_class);
+        setVal('ipLan',    d.server_lan, d.server_lan_class);
+        setVal('ipWan',    d.server_wan, d.server_wan_class);
+
+        /* Show environment badge if cloud */
+        const envBadge = document.getElementById('envBadge');
+        if (envBadge && d.environment === 'cloud') {
+            envBadge.classList.remove('d-none');
+        }
     } catch (err) {
         ['ipClient', 'ipLan', 'ipWan'].forEach(id =>
             document.getElementById(id).textContent = 'unavailable');

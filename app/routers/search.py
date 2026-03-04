@@ -15,16 +15,14 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.config import TEMPLATES_DIR
 from app.database import get_db
 from app.dependencies import require_user
 from app.models import Alert, LogEvent, User
+from app.templating import templates
 
 router = APIRouter(tags=["Search"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ── Query parser ─────────────────────────────────────────────────────────────
 _TOKEN_RE = re.compile(

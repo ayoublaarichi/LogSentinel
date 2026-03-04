@@ -4,10 +4,8 @@ Auth router — signup, login, logout HTML pages + POST handlers.
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.config import TEMPLATES_DIR
 from app.database import get_db
 from app.services.auth_service import (
     authenticate_user,
@@ -20,9 +18,9 @@ from app.services.auth_service import (
     update_user_password,
     verify_password_reset_token,
 )
+from app.templating import templates
 
 router = APIRouter(tags=["Auth"])
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @router.get("/signup", include_in_schema=False)
