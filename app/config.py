@@ -2,9 +2,16 @@
 Application configuration loaded from environment variables with safe defaults.
 """
 
+import logging
 import os
 from pathlib import Path
 
+# ── Logging (configure early) ────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
@@ -13,7 +20,13 @@ STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
 SAMPLE_LOGS_DIR: Path = BASE_DIR / "sample_logs"
 
 # Vercel serverless uses a read-only filesystem; /tmp is the only writable area.
-_ON_VERCEL: bool = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_URL"))
+# Check multiple env vars so detection survives cold-start edge cases.
+_ON_VERCEL: bool = bool(
+    os.environ.get("VERCEL")
+    or os.environ.get("VERCEL_URL")
+    or os.environ.get("VERCEL_ENV")
+    or os.environ.get("VERCEL_REGION")
+)
 _DATA_DIR: Path = Path("/tmp") if _ON_VERCEL else BASE_DIR
 
 UPLOAD_DIR: Path = _DATA_DIR / "uploads"
@@ -40,11 +53,28 @@ SESSION_COOKIE_NAME: str = "ls_session"
 SESSION_MAX_AGE: int = 86400 * 7  # 7 days
 # Cookie security flags driven by environment
 SESSION_COOKIE_SECURE: bool = _ON_VERCEL   # True on HTTPS (Vercel), False locally
-SESSION_COOKIE_SAMESITE: str = "lax"       # prevents CSRF while allowing top-level nav
+from typing import Literal
+
+SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"  # prevents CSRF while allowing top-level nav
 
 # ── Rate limiting (in-memory, per-process) ───────────────────────────────────
 INGEST_RATE_LIMIT: int = 60          # max requests per window
 INGEST_RATE_WINDOW: int = 60         # window in seconds
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+# On Vercel the frontend and API share the same origin, but custom domains or
+# preview deployments may differ.  Allow the Vercel URL explicitly + localhost.
+_vercel_url = os.environ.get("VERCEL_URL", "")  # e.g. "logsentinel-tau.vercel.app"
+CORS_ORIGINS: list[str] = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+if _vercel_url:
+    CORS_ORIGINS.append(f"https://{_vercel_url}")
+# Also allow the production custom domain if set
+_custom_domain = os.environ.get("LOGSENTINEL_DOMAIN", "")
+if _custom_domain:
+    CORS_ORIGINS.append(f"https://{_custom_domain}")
 
 # ── Threat intel ─────────────────────────────────────────────────────────────
 THREAT_INTEL_CACHE_TTL: int = 3600   # 1 hour

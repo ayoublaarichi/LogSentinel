@@ -89,11 +89,35 @@ def verify_password_reset_token(token: str) -> Optional[str]:
 REMEMBER_ME_MAX_AGE = 86400 * 30  # 30 days
 
 
+def _is_secure_context(request: Optional[Request] = None) -> bool:
+    """Decide whether to set the Secure flag on the cookie.
+
+    Uses the static config flag *plus* a dynamic check on the request's
+    X-Forwarded-Proto header.  This catches edge cases where the
+    ``_ON_VERCEL`` env-var detection missed (e.g. preview deployments
+    with non-standard env), but the request clearly arrived over HTTPS.
+    """
+    if SESSION_COOKIE_SECURE:
+        return True
+    if request is None:
+        return False
+    # Behind Vercel/Cloudflare/ALB the request scheme is plain http,
+    # but the proxy sets X-Forwarded-Proto: https.
+    proto = request.headers.get("x-forwarded-proto", "")
+    if proto.lower() == "https":
+        return True
+    if request.url.scheme == "https":
+        return True
+    return False
+
+
 def create_session_cookie(
-    response: Response, user_id: int, *, remember: bool = False
+    response: Response, user_id: int, *, remember: bool = False,
+    request: Optional[Request] = None,
 ) -> None:
     token = _serializer.dumps({"uid": user_id})
     age = REMEMBER_ME_MAX_AGE if remember else SESSION_MAX_AGE
+    secure = _is_secure_context(request)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
@@ -101,19 +125,20 @@ def create_session_cookie(
         path="/",
         httponly=True,
         samesite=SESSION_COOKIE_SAMESITE,
-        secure=SESSION_COOKIE_SECURE,
+        secure=secure,
     )
     logger.info("Session cookie set for user_id=%s (remember=%s, secure=%s)",
-                user_id, remember, SESSION_COOKIE_SECURE)
+                user_id, remember, secure)
 
 
-def clear_session_cookie(response: Response) -> None:
+def clear_session_cookie(response: Response, request: Optional[Request] = None) -> None:
+    secure = _is_secure_context(request)
     response.delete_cookie(
         SESSION_COOKIE_NAME,
         path="/",
         httponly=True,
         samesite=SESSION_COOKIE_SAMESITE,
-        secure=SESSION_COOKIE_SECURE,
+        secure=secure,
     )
 
 

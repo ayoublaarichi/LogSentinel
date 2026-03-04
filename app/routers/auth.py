@@ -51,7 +51,7 @@ def signup_submit(
     audit(db, user.id, "signup", f"New account: {user.email}",
           ip=request.client.host if request.client else "")
     response = RedirectResponse("/", status_code=303)
-    create_session_cookie(response, user.id)
+    create_session_cookie(response, user.id, request=request)
     return response
 
 
@@ -78,7 +78,7 @@ def login_submit(
     audit(db, user.id, "login", f"Login: {user.email}",
           ip=request.client.host if request.client else "")
     response = RedirectResponse("/", status_code=303)
-    create_session_cookie(response, user.id, remember=bool(remember))
+    create_session_cookie(response, user.id, remember=bool(remember), request=request)
     return response
 
 
@@ -212,5 +212,5 @@ def logout(request: Request, db: Session = Depends(get_db)):
     if uid:
         audit(db, uid, "logout", "", ip=request.client.host if request.client else "")
     response = RedirectResponse("/login", status_code=303)
-    clear_session_cookie(response)
+    clear_session_cookie(response, request=request)
     return response

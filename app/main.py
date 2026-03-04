@@ -4,12 +4,14 @@ LogSentinel — Multi-Tenant SOC Log Analyzer & Detection Dashboard.
 FastAPI application entry point.
 """
 
+import logging
 import socket
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
 from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import distinct, func
@@ -19,6 +21,7 @@ from app.config import (
     APP_DESCRIPTION,
     APP_TITLE,
     APP_VERSION,
+    CORS_ORIGINS,
     STATIC_DIR,
     TEMPLATES_DIR,
     _ON_VERCEL,
@@ -27,6 +30,8 @@ from app.database import get_db, init_db
 from app.dependencies import get_current_user, require_user
 from app.models import Alert, LogEvent, User
 from app.templating import templates
+
+logger = logging.getLogger("logsentinel.app")
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
@@ -41,6 +46,16 @@ app = FastAPI(
     description=APP_DESCRIPTION,
     version=APP_VERSION,
     lifespan=lifespan,
+    redirect_slashes=False,   # Prevent 307 redirects that cause 405 on Vercel
+)
+
+# ── CORS middleware (must be added before routes) ────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── Static files ─────────────────────────────────────────────────────────────
@@ -53,18 +68,22 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 def _wants_html(request: Request) -> bool:
     """True if the client expects an HTML response (browser navigation)."""
-    accept = request.headers.get("accept", "")
-    # fetch() calls from JS typically send */* or application/json.
-    # Browser navigation sends text/html explicitly.
-    if "text/html" in accept and "application/json" not in accept:
-        return True
-    # Extra safeguard: API paths never redirect
+    # API paths NEVER redirect — this is the strongest signal.
     if request.url.path.startswith("/api/"):
         return False
     # XMLHttpRequest / fetch often set X-Requested-With
     if request.headers.get("x-requested-with", "").lower() == "xmlhttprequest":
         return False
-    return "text/html" in accept
+    accept = request.headers.get("accept", "")
+    # fetch() calls from JS typically send */* or application/json.
+    # Browser navigation sends text/html explicitly.
+    if "text/html" in accept and "application/json" not in accept:
+        return True
+    # Fallback: if the client accepts text/html at all (even */*)
+    # and the path is NOT an API path, treat as browser navigation.
+    if "text/html" in accept:
+        return True
+    return False
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -74,6 +93,30 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
             return RedirectResponse("/login", status_code=303)
         return JSONResponse({"detail": exc.detail}, status_code=401)
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
+# ── Health & session probes (no auth) ────────────────────────────────────────
+@app.get("/api/health", tags=["Utility"])
+def health_check() -> dict:
+    """Unprivileged health probe — confirms the app is alive and returns version info."""
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "environment": "cloud" if _ON_VERCEL else "self-hosted",
+    }
+
+
+@app.get("/api/session-check", tags=["Utility"])
+def session_check(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Check whether the caller has a valid session cookie.
+
+    Returns ``{"authenticated": true, "email": "..."}`` or
+    ``{"authenticated": false}``.  Always HTTP 200 — never 401.
+    """
+    user = get_current_user(request, db)
+    if user:
+        return {"authenticated": True, "email": user.email}
+    return {"authenticated": False}
 
 
 # ── Include routers ──────────────────────────────────────────────────────────
