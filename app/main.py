@@ -12,7 +12,7 @@ from typing import Optional
 import httpx
 from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import distinct, func
 from sqlalchemy.orm import Session
@@ -74,6 +74,10 @@ def _wants_html(request: Request) -> bool:
     # XMLHttpRequest / fetch often set X-Requested-With
     if request.headers.get("x-requested-with", "").lower() == "xmlhttprequest":
         return False
+    if request.headers.get("sec-fetch-dest", "").lower() == "document":
+        return True
+    if request.headers.get("upgrade-insecure-requests", "") == "1":
+        return True
     accept = request.headers.get("accept", "")
     # fetch() calls from JS typically send */* or application/json.
     # Browser navigation sends text/html explicitly.
@@ -99,6 +103,7 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
             login_url = f"/login?next={quote(next_url, safe='')}"
             logger.info("401 → redirecting browser to %s", login_url)
             return RedirectResponse(login_url, status_code=303)
+        logger.warning("401 API response for path=%s", request.url.path)
         return JSONResponse({"detail": exc.detail}, status_code=401)
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
@@ -106,25 +111,27 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 # ── Health & session probes (no auth) ────────────────────────────────────────
 @app.get("/api/health", tags=["Utility"])
 def health_check() -> dict:
-    """Unprivileged health probe — confirms the app is alive and returns version info."""
-    return {
-        "status": "ok",
-        "version": APP_VERSION,
-        "environment": "cloud" if _ON_VERCEL else "self-hosted",
-    }
+    """Unprivileged health probe."""
+    return {"status": "ok"}
 
 
 @app.get("/api/session-check", tags=["Utility"])
 def session_check(request: Request, db: Session = Depends(get_db)) -> dict:
     """Check whether the caller has a valid session cookie.
 
-    Returns ``{"authenticated": true, "email": "..."}`` or
+    Returns ``{"authenticated": true, "user": {"id": ..., "email": "..."}}`` or
     ``{"authenticated": false}``.  Always HTTP 200 — never 401.
     """
     user = get_current_user(request, db)
     if user:
-        return {"authenticated": True, "email": user.email}
+        return {"authenticated": True, "user": {"id": user.id, "email": user.email}}
     return {"authenticated": False}
+
+
+@app.options("/api/{path:path}", include_in_schema=False)
+def options_fallback(path: str) -> Response:
+    """Fallback OPTIONS responder to avoid 405 on strict/proxy edge cases."""
+    return Response(status_code=204)
 
 
 # ── Include routers ──────────────────────────────────────────────────────────

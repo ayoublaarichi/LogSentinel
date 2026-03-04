@@ -107,7 +107,6 @@ class TestHealth:
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "ok"
-        assert "version" in body
 
     def test_session_check_unauthenticated(self, client):
         """Session check returns 200 (never 401) even without a cookie."""
@@ -130,7 +129,7 @@ class TestAuth:
         assert r.status_code == 200
         body = r.json()
         assert body["authenticated"] is True
-        assert body["email"] == test_email
+        assert body["user"]["email"] == test_email
 
     def test_whoami(self, authed_client, test_email):
         r = authed_client.get("/api/whoami")

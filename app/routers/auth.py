@@ -2,6 +2,8 @@
 Auth router — signup, login, logout HTML pages + POST handlers.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -21,6 +23,7 @@ from app.services.auth_service import (
 from app.templating import templates
 
 router = APIRouter(tags=["Auth"])
+logger = logging.getLogger("logsentinel.auth")
 
 
 @router.get("/signup", include_in_schema=False)
@@ -71,14 +74,17 @@ def login_submit(
     next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "unknown"
     user = authenticate_user(db, email, password)
     if not user:
+        logger.warning("Login failed for email=%s from ip=%s", email.strip().lower(), client_ip)
         return templates.TemplateResponse(
             "login.html", {"request": request, "error": "Invalid email or password.", "info": None, "next": next}
         )
 
+    logger.info("Login success for email=%s from ip=%s", user.email, client_ip)
     audit(db, user.id, "login", f"Login: {user.email}",
-          ip=request.client.host if request.client else "")
+          ip=client_ip)
     # Sanitise redirect target — only allow relative paths to prevent open-redirect.
     redirect_to = next if next.startswith("/") else "/"
     response = RedirectResponse(redirect_to, status_code=303)

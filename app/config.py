@@ -5,6 +5,7 @@ Application configuration loaded from environment variables with safe defaults.
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 
 # ── Logging (configure early) ────────────────────────────────────────────────
 logging.basicConfig(
@@ -28,11 +29,28 @@ _ON_VERCEL: bool = bool(
     or os.environ.get("VERCEL_REGION")
 )
 _DATA_DIR: Path = Path("/tmp") if _ON_VERCEL else BASE_DIR
+_ENV: str = os.environ.get("ENV", os.environ.get("APP_ENV", "development")).lower()
+_IS_PRODUCTION: bool = _ON_VERCEL or _ENV == "production"
 
 UPLOAD_DIR: Path = _DATA_DIR / "uploads"
 
 # ── Database ─────────────────────────────────────────────────────────────────
-DATABASE_URL: str = f"sqlite:///{_DATA_DIR / 'logsentinel.db'}"
+_db_env = os.environ.get("DATABASE_URL", "").strip()
+if _IS_PRODUCTION:
+    if not _db_env:
+        raise RuntimeError(
+            "DATABASE_URL is required in production (Vercel/ENV=production). "
+            "Use a persistent Postgres database. Example: "
+            "postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME"
+        )
+    DATABASE_URL: str = _db_env
+else:
+    # Local development default: persistent SQLite file in project root.
+    DATABASE_URL = _db_env or f"sqlite:///{BASE_DIR / 'logsentinel.db'}"
+
+# Accept Heroku-style postgres:// URLs by normalizing for SQLAlchemy.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 
 # ── Application ──────────────────────────────────────────────────────────────
 APP_TITLE: str = "LogSentinel"
@@ -43,7 +61,7 @@ DEBUG: bool = not _ON_VERCEL  # auto-disable debug on Vercel
 # ── Auth / session settings ──────────────────────────────────────────────────
 _secret_env = os.environ.get("LOGSENTINEL_SECRET", "")
 _DEV_FALLBACK = "change-me-in-production-32chars!!"
-if _ON_VERCEL and (not _secret_env or _secret_env == _DEV_FALLBACK):
+if _IS_PRODUCTION and (not _secret_env or _secret_env == _DEV_FALLBACK):
     raise RuntimeError(
         "LOGSENTINEL_SECRET env var must be set to a strong random value in production. "
         "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
@@ -53,8 +71,6 @@ SESSION_COOKIE_NAME: str = "ls_session"
 SESSION_MAX_AGE: int = 86400 * 7  # 7 days
 # Cookie security flags driven by environment
 SESSION_COOKIE_SECURE: bool = _ON_VERCEL   # True on HTTPS (Vercel), False locally
-from typing import Literal
-
 SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"  # prevents CSRF while allowing top-level nav
 
 # ── Rate limiting (in-memory, per-process) ───────────────────────────────────

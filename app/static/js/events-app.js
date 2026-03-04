@@ -306,13 +306,18 @@ async function apiFetch(url) {
         toast('Session expired — please log in again.', 'error');
         const next = encodeURIComponent(window.location.pathname + window.location.search);
         window.location.href = `/login?next=${next}`;
-        throw new Error('Session expired');
+        throw new Error(`Unauthorized: ${url}`);
     }
     if (!r.ok) {
         console.error(`[apiFetch] ${r.status} ${r.statusText} on ${url}`);
-        throw new Error(`${r.status} ${r.statusText}`);
+        throw new Error(`Request failed for ${url}: ${r.status} ${r.statusText}`);
     }
-    return r.json();
+    try {
+        return await r.json();
+    } catch (err) {
+        console.error(`[apiFetch] Invalid JSON from ${url}`, err);
+        throw new Error(`Invalid JSON response from ${url}`);
+    }
 }
 
 function setLoading(show) {

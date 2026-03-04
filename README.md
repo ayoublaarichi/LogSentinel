@@ -156,10 +156,50 @@ Interactive docs: **http://localhost:8000/docs**
 ## 🛠️ Tech Stack
 
 - **Backend:** Python 3.11+ / FastAPI
-- **Database:** SQLite via SQLAlchemy 2.0 (ORM)
+- **Database:** SQLAlchemy 2.0 ORM (SQLite local dev, Postgres in production)
 - **Templates:** Jinja2 + Bootstrap 5.3 (dark theme)
 - **Detection:** Custom sliding-window engine
 - **API Docs:** Swagger UI (auto-generated)
+
+---
+
+## ☁️ Vercel Deployment Notes (Auth + DB Stability)
+
+### Required environment variables
+
+- `LOGSENTINEL_SECRET` — strong random session signing key (required in production)
+- `DATABASE_URL` — **required in production**; must point to persistent Postgres
+- `ENV=production` (or Vercel-managed `VERCEL=1`) to activate production checks
+
+### `DATABASE_URL` example
+
+```bash
+postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME
+```
+
+### Why SQLite `/tmp` is not used in production
+
+Vercel serverless instances have ephemeral local storage. Data in `/tmp` is not guaranteed across cold starts/instances, so user/session persistence becomes unreliable. In production, LogSentinel now fails fast if `DATABASE_URL` is not configured.
+
+### Migration strategy
+
+Current startup still uses `Base.metadata.create_all(...)` for baseline schema creation. This is acceptable for MVP/bootstrap, but **not** a full migration workflow. Use **Alembic** for controlled schema evolution in persistent Postgres environments.
+
+---
+
+## 🍪 Cookie / Session Debugging Checklist
+
+In browser DevTools (Application/Storage → Cookies):
+
+- Ensure `ls_session` is present after login
+- Verify attributes:
+	- `HttpOnly = true`
+	- `Path = /`
+	- `SameSite = Lax`
+	- `Secure = true` on HTTPS/Vercel
+- If `/events` redirects to login, check `/api/session-check` response:
+	- `{"authenticated": true, "user": {...}}` when session is valid
+	- `{"authenticated": false}` when cookie missing/expired
 
 ---
 

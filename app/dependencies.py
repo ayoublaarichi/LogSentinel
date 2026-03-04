@@ -31,9 +31,24 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = _get_current_user(request, db)
     if user is None:
         client_ip = request.client.host if request.client else "unknown"
-        logger.info("Auth denied: %s %s from %s (no valid session)",
-                    request.method, request.url.path, client_ip)
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        path = request.url.path
+        accept = request.headers.get("accept", "")
+        sec_fetch_dest = request.headers.get("sec-fetch-dest", "")
+        upgrade_insecure = request.headers.get("upgrade-insecure-requests", "")
+        is_browser_document = (
+            "text/html" in accept
+            or sec_fetch_dest == "document"
+            or upgrade_insecure == "1"
+        )
+        logger.info(
+            "Auth denied: %s %s from %s (api=%s, browser_document=%s)",
+            request.method,
+            path,
+            client_ip,
+            path.startswith("/api/"),
+            is_browser_document,
+        )
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return user
 
 

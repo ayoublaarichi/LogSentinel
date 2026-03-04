@@ -2,15 +2,22 @@
 SQLAlchemy engine, session factory, and declarative base.
 """
 
+import logging
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import DATABASE_URL
 
+logger = logging.getLogger("logsentinel.db")
+
+_IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
 # ── Engine & session ─────────────────────────────────────────────────────────
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},  # Required for SQLite
+    connect_args={"check_same_thread": False} if _IS_SQLITE else {},
+    pool_pre_ping=True,
     echo=False,
 )
 
@@ -34,8 +41,16 @@ def get_db():
 
 
 def init_db() -> None:
-    """Create all tables and patch legacy SQLite schemas at startup."""
+    """Create all tables and patch legacy SQLite schemas at startup.
+
+    Note: ``create_all`` is not a full migration system for production.
+    Use Alembic for schema evolution in long-running Postgres environments.
+    """
     Base.metadata.create_all(bind=engine)
+
+    if not _IS_SQLITE:
+        logger.info("Database initialized (non-SQLite): create_all executed; Alembic recommended for migrations.")
+        return
 
     # Legacy schema compatibility (v1 -> v2)
     with engine.begin() as conn:
