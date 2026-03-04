@@ -42,6 +42,7 @@ let filterBar, eventTable, eventDetails, rawViewer, timeline;
    ═══════════════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
     initComponents();
+    bindActions();
     await loadData();
     timeline.load(24);
 
@@ -88,6 +89,13 @@ function initComponents() {
     timeline = new TimelineChart('timelineCanvas');
 }
 
+function bindActions() {
+    const seedBtn = document.getElementById('ls-seed-demo');
+    if (seedBtn) {
+        seedBtn.addEventListener('click', seedDemoEvents);
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Data loading
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -103,6 +111,11 @@ async function loadData() {
 
         // Enrich events with computed severity + matched rule
         state.allEvents = events.map(enrichEvent);
+
+        const seedBtn = document.getElementById('ls-seed-demo');
+        if (seedBtn) {
+            seedBtn.style.display = events.length > 0 ? 'none' : '';
+        }
 
         // Provide autocomplete hints to filter bar
         filterBar.setHints({ ips, types, users });
@@ -317,6 +330,42 @@ async function apiFetch(url) {
     } catch (err) {
         console.error(`[apiFetch] Invalid JSON from ${url}`, err);
         throw new Error(`Invalid JSON response from ${url}`);
+    }
+}
+
+async function seedDemoEvents() {
+    const btn = document.getElementById('ls-seed-demo');
+    let originalLabel = '';
+    if (btn) {
+        originalLabel = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Seeding...';
+    }
+    try {
+        const r = await fetch('/api/events/seed?count=50', {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        if (r.status === 401) {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/login?next=${next}`;
+            throw new Error('Unauthorized');
+        }
+        if (!r.ok) {
+            throw new Error(`Seed failed: ${r.status} ${r.statusText}`);
+        }
+        const data = await r.json();
+        toast(`Seeded ${data.seeded ?? 0} demo events`, 'success');
+        await loadData();
+        timeline.load(24);
+    } catch (err) {
+        toast(`Failed to seed demo events: ${err.message}`, 'error');
+        console.error('[events-app] seed failed', err);
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalLabel || '<i class="bi bi-stars"></i> Seed Demo Events';
+            btn.disabled = false;
+        }
     }
 }
 
