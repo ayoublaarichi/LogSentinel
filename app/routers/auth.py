@@ -13,9 +13,12 @@ from app.services.auth_service import (
     authenticate_user,
     audit,
     clear_session_cookie,
+    create_password_reset_token,
     create_session_cookie,
     create_user,
     get_user_by_email,
+    update_user_password,
+    verify_password_reset_token,
 )
 
 router = APIRouter(tags=["Auth"])
@@ -56,7 +59,8 @@ def signup_submit(
 
 @router.get("/login", include_in_schema=False)
 def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    info = "Password updated. Please sign in." if request.query_params.get("reset") == "1" else None
+    return templates.TemplateResponse("login.html", {"request": request, "error": None, "info": info})
 
 
 @router.post("/login", include_in_schema=False)
@@ -69,7 +73,7 @@ def login_submit(
     user = authenticate_user(db, email, password)
     if not user:
         return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Invalid email or password."}
+            "login.html", {"request": request, "error": "Invalid email or password.", "info": None}
         )
 
     audit(db, user.id, "login", f"Login: {user.email}",
@@ -77,6 +81,129 @@ def login_submit(
     response = RedirectResponse("/", status_code=303)
     create_session_cookie(response, user.id)
     return response
+
+
+@router.get("/forgot-password", include_in_schema=False)
+def forgot_password_page(request: Request):
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {"request": request, "error": None, "info": None, "reset_url": None},
+    )
+
+
+@router.post("/forgot-password", include_in_schema=False)
+def forgot_password_submit(
+    request: Request,
+    email: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    candidate = get_user_by_email(db, email)
+    reset_url = None
+    if candidate:
+        token = create_password_reset_token(candidate.email)
+        base = str(request.base_url).rstrip("/")
+        reset_url = f"{base}/reset-password?token={token}"
+        audit(
+            db,
+            candidate.id,
+            "password_reset_requested",
+            "Password reset link generated",
+            ip=request.client.host if request.client else "",
+        )
+
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {
+            "request": request,
+            "error": None,
+            "info": "If an account exists for that email, a reset link is ready below.",
+            "reset_url": reset_url,
+        },
+    )
+
+
+@router.get("/reset-password", include_in_schema=False)
+def reset_password_page(request: Request, token: str = ""):
+    email = verify_password_reset_token(token)
+    if not email:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": "",
+                "error": "Invalid or expired reset link.",
+                "info": None,
+            },
+        )
+    return templates.TemplateResponse(
+        "reset_password.html",
+        {"request": request, "token": token, "error": None, "info": None},
+    )
+
+
+@router.post("/reset-password", include_in_schema=False)
+def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    email = verify_password_reset_token(token)
+    if not email:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": "",
+                "error": "Invalid or expired reset link.",
+                "info": None,
+            },
+        )
+
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": token,
+                "error": "Password must be at least 8 characters.",
+                "info": None,
+            },
+        )
+
+    if password != password2:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": token,
+                "error": "Passwords do not match.",
+                "info": None,
+            },
+        )
+
+    user = get_user_by_email(db, email)
+    if not user:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": "",
+                "error": "Invalid or expired reset link.",
+                "info": None,
+            },
+        )
+
+    update_user_password(db, user, password)
+    audit(
+        db,
+        user.id,
+        "password_reset_completed",
+        "Password updated via reset flow",
+        ip=request.client.host if request.client else "",
+    )
+    return RedirectResponse("/login?reset=1", status_code=303)
 
 
 @router.get("/logout", include_in_schema=False)

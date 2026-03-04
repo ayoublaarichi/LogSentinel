@@ -15,6 +15,7 @@ from app.config import SECRET_KEY, SESSION_COOKIE_NAME, SESSION_MAX_AGE
 from app.models import AuditLog, User
 
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
+RESET_TOKEN_MAX_AGE = 1800
 
 
 # ── Password helpers ─────────────────────────────────────────────────────────
@@ -47,6 +48,32 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     if user and verify_password(password, user.password_hash):
         return user
     return None
+
+
+def update_user_password(db: Session, user: User, password: str) -> None:
+    user.password_hash = hash_password(password)
+    db.add(user)
+    db.commit()
+
+
+def create_password_reset_token(email: str) -> str:
+    payload = {"email": email.lower().strip(), "nonce": secrets.token_hex(8)}
+    return _serializer.dumps(payload, salt="password-reset")
+
+
+def verify_password_reset_token(token: str) -> Optional[str]:
+    try:
+        data = _serializer.loads(
+            token,
+            max_age=RESET_TOKEN_MAX_AGE,
+            salt="password-reset",
+        )
+        email = data.get("email", "")
+        if not email:
+            return None
+        return str(email).lower().strip()
+    except (BadSignature, Exception):
+        return None
 
 
 # ── Session cookie helpers ───────────────────────────────────────────────────
