@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Investigate {{ ip }}{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+
+        <!-- Header -->
+        <div class="d-flex align-items-center gap-3 mb-4">
+            <a href="/alerts" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Back
+            </a>
+            <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">
+                <i class="bi bi-crosshair text-danger"></i>
+                Investigate IP: <code class="ms-1" style="font-size:1.1rem">{{ ip }}</code>
+            </h4>
+        </div>
+
+        <div class="row g-3">
+
+            <!-- ── Threat Intel card ──────────────────────────────────── -->
+            <div class="col-lg-4">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi bi-globe text-info"></i>
+                        <strong>Threat Intelligence</strong>
+                    </div>
+                    <div class="card-body" style="font-size:.85rem">
+                        <div class="mb-3">
+                            <div style="font-size:.7rem;text-transform:uppercase;
+                                        letter-spacing:.08em;color:var(--ls-text-dim);margin-bottom:4px">
+                                Country / City
+                            </div>
+                            <span style="font-family:var(--ls-font-mono)">
+                                {{ intel.country }} — {{ intel.city }}
+                            </span>
+                        </div>
+                        <div class="mb-3">
+                            <div style="font-size:.7rem;text-transform:uppercase;
+                                        letter-spacing:.08em;color:var(--ls-text-dim);margin-bottom:4px">
+                                ISP / ASN
+                            </div>
+                            <span style="font-family:var(--ls-font-mono)">
+                                {{ intel.isp }} ({{ intel.asn }})
+                            </span>
+                        </div>
+                        <div class="mb-3">
+                            <div style="font-size:.7rem;text-transform:uppercase;
+                                        letter-spacing:.08em;color:var(--ls-text-dim);margin-bottom:4px">
+                                Reputation Score
+                            </div>
+                            {% if intel.reputation_score is not none and intel.reputation_score > 0 %}
+                            <span class="badge"
+                                  style="background:rgba(255,45,85,0.15);color:#ff7b72;
+                                         border:1px solid rgba(255,45,85,0.3);font-size:.8rem">
+                                {{ intel.reputation_score }}/100 — Suspicious
+                            </span>
+                            {% elif intel.reputation_score is not none %}
+                            <span class="badge"
+                                  style="background:rgba(63,185,80,0.15);color:#3fb950;
+                                         border:1px solid rgba(63,185,80,0.3);font-size:.8rem">
+                                0/100 — Clean
+                            </span>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <div style="font-size:.7rem;text-transform:uppercase;
+                                        letter-spacing:.08em;color:var(--ls-text-dim);margin-bottom:4px">
+                                Tor / Proxy
+                            </div>
+                            {% if intel.is_tor %}
+                            <span class="badge"
+                                  style="background:rgba(255,45,85,0.15);color:#ff7b72;
+                                         border:1px solid rgba(255,45,85,0.3)">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Yes
+                            </span>
+                            {% else %}
+                            <span class="text-muted">No</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Stats & targeted users ─────────────────────────────── -->
+            <div class="col-lg-4">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi bi-bar-chart text-info"></i>
+                        <strong>Activity Summary</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <div class="p-2 text-center"
+                                     style="background:rgba(255,255,255,0.04);
+                                            border:1px solid var(--ls-border);border-radius:6px">
+                                    <div style="font-size:1.6rem;font-weight:700;
+                                                font-family:var(--ls-font-mono);color:var(--ls-accent)">
+                                        {{ events | length }}
+                                    </div>
+                                    <div style="font-size:.7rem;color:var(--ls-text-dim)">Events</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-2 text-center"
+                                     style="background:rgba(255,255,255,0.04);
+                                            border:1px solid var(--ls-border);border-radius:6px">
+                                    <div style="font-size:1.6rem;font-weight:700;
+                                                font-family:var(--ls-font-mono);color:var(--ls-sev-high)">
+                                        {{ alerts | length }}
+                                    </div>
+                                    <div style="font-size:.7rem;color:var(--ls-text-dim)">Alerts</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="font-size:.7rem;text-transform:uppercase;
+                                    letter-spacing:.08em;color:var(--ls-text-dim);margin-bottom:6px">
+                            <i class="bi bi-person-fill-x me-1"></i>Targeted Usernames
+                        </div>
+                        <div>
+                            {% if targeted_users %}
+                                {% for u in targeted_users %}
+                                <span class="badge me-1 mb-1"
+                                      style="font-family:var(--ls-font-mono);font-size:.75rem;
+                                             background:rgba(77,158,255,0.1);
+                                             border:1px solid rgba(77,158,255,0.3);
+                                             color:var(--ls-accent)">{{ u }}</span>
+                                {% endfor %}
+                            {% else %}
+                            <span class="text-muted small">None recorded</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Alerts for this IP ─────────────────────────────────── -->
+            <div class="col-lg-4">
+                <div class="card bg-dark border-secondary h-100">
+                    <div class="card-header d-flex align-items-center gap-2">
+                        <i class="bi bi-exclamation-triangle" style="color:var(--ls-sev-high)"></i>
+                        <strong>Alerts for {{ ip }}</strong>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if alerts %}
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Severity</th>
+                                        <th>Rule</th>
+                                        <th>Count</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for a in alerts %}
+                                    <tr class="row-{{ a.severity }}">
+                                        <td><span class="badge sev-{{ a.severity }}">{{ a.severity | upper }}</span></td>
+                                        <td class="small text-mono">{{ a.rule_name }}</td>
+                                        <td class="text-center">{{ a.event_count }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4 text-muted small">No alerts for this IP.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ── Attack Timeline chart ──────────────────────────────────── -->
+        <div class="card bg-dark border-secondary mt-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-graph-up text-info"></i>
+                <strong>Attack Timeline</strong>
+            </div>
+            <div class="card-body">
+                <canvas id="attackTimeline" height="120"></canvas>
+            </div>
+        </div>
+
+        <!-- ── Recent events table ────────────────────────────────────── -->
+        <div class="card bg-dark border-secondary mt-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-list-ul text-info"></i>
+                <strong>Events from {{ ip }}</strong>
+                <span class="badge ms-2"
+                      style="font-size:.68rem;background:rgba(255,255,255,0.06);
+                             border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">
+                    {{ events | length }}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                {% if events %}
+                <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+                    <table class="table table-dark table-hover table-sm mb-0">
+                        <thead style="position:sticky;top:0;z-index:1">
+                            <tr>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Username</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for e in events %}
+                            <tr>
+                                <td class="small text-mono text-dim">{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td class="small text-mono">{{ e.event_type }}</td>
+                                <td class="small">{{ e.username or '—' }}</td>
+                                <td>
+                                    {% if e.log_source == 'auth' %}
+                                    <span class="badge badge-auth">auth</span>
+                                    {% elif e.log_source == 'nginx' %}
+                                    <span class="badge badge-nginx">nginx</span>
+                                    {% else %}
+                                    <span class="badge" style="background:rgba(255,255,255,0.05)">{{ e.log_source }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">No events recorded for this IP.</div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Attack Timeline Chart (Chart.js) ────────────────────────────────── */
+(function() {
+    const events = [
+        {% for e in events %}
+        { ts: "{{ e.timestamp.strftime('%Y-%m-%dT%H:%M:%S') }}", type: "{{ e.event_type }}" },
+        {% endfor %}
+    ];
+
+    if (!events.length) return;
+
+    // Group by hour
+    const hourMap = {};
+    events.forEach(ev => {
+        const h = ev.ts.substring(0, 13) + ':00';
+        hourMap[h] = (hourMap[h] || 0) + 1;
+    });
+
+    const labels = Object.keys(hourMap).sort();
+    const data = labels.map(l => hourMap[l]);
+
+    new Chart(document.getElementById('attackTimeline'), {
+        type: 'bar',
+        data: {
+            labels: labels.map(l => l.substring(5)),
+            datasets: [{
+                label: 'Events',
+                data: data,
+                backgroundColor: 'rgba(248,81,73,0.4)',
+                borderColor: 'rgba(248,81,73,0.8)',
+                borderWidth: 1,
+                borderRadius: 3,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#8b949e', font: { family: 'JetBrains Mono', size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#8b949e', font: { family: 'JetBrains Mono', size: 10 } }
+                }
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

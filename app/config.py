@@ -2,6 +2,7 @@
 Application configuration loaded from environment variables with safe defaults.
 """
 
+import os
 from pathlib import Path
 
 
@@ -17,9 +18,21 @@ DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'logsentinel.db'}"
 
 # ── Application ──────────────────────────────────────────────────────────────
 APP_TITLE: str = "LogSentinel"
-APP_DESCRIPTION: str = "Mini SOC Log Analyzer & Alert Dashboard"
-APP_VERSION: str = "1.0.0"
+APP_DESCRIPTION: str = "Multi-Tenant SOC Log Analyzer & Alert Dashboard"
+APP_VERSION: str = "2.0.0"
 DEBUG: bool = True
+
+# ── Auth / session settings ──────────────────────────────────────────────────
+SECRET_KEY: str = os.environ.get("LOGSENTINEL_SECRET", "change-me-in-production-32chars!!")
+SESSION_COOKIE_NAME: str = "ls_session"
+SESSION_MAX_AGE: int = 86400 * 7  # 7 days
+
+# ── Rate limiting (in-memory, per-process) ───────────────────────────────────
+INGEST_RATE_LIMIT: int = 60          # max requests per window
+INGEST_RATE_WINDOW: int = 60         # window in seconds
+
+# ── Threat intel ─────────────────────────────────────────────────────────────
+THREAT_INTEL_CACHE_TTL: int = 3600   # 1 hour
 
 # Ensure upload directory exists at import time
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

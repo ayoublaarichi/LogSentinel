@@ -73,6 +73,11 @@
                                      border:1px solid rgba(248,81,73,0.4)">!</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link {% block nav_search %}{% endblock %}" href="/search">
+                        <i class="bi bi-search me-1"></i>Search
+                    </a>
+                </li>
             </ul>
 
             <!-- Right status bar -->
@@ -91,6 +96,25 @@
                     <i class="bi bi-clock" style="font-size:0.7rem"></i>
                     <span id="clock"></span>
                 </span>
+
+                {% if user %}
+                <!-- User menu -->
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-1"
+                            type="button" data-bs-toggle="dropdown"
+                            style="font-size:0.75rem;font-family:var(--ls-font-mono)">
+                        <i class="bi bi-person-circle"></i>
+                        <span class="d-none d-md-inline">{{ user.email }}</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
+                        <li><a class="dropdown-item small" href="/settings/api-keys">
+                            <i class="bi bi-key me-2"></i>API Keys</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item small text-danger" href="/logout">
+                            <i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                    </ul>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -106,9 +130,9 @@
         style="border-color:var(--ls-border)!important;font-size:0.74rem;
                font-family:var(--ls-font-mono);color:var(--ls-text-dim)">
     <span class="text-muted" style="color:var(--ls-text-dim)!important">
-        LogSentinel v1.0.0
+        LogSentinel v2.0.0
         <span style="margin:0 8px;color:var(--ls-border-2)">|</span>
-        SOC Log Analyzer &amp; Detection Dashboard
+        Multi-Tenant SOC Log Analyzer &amp; Detection Dashboard
         <span style="margin:0 8px;color:var(--ls-border-2)">|</span>
         <i class="bi bi-shield-check me-1"></i>Powered by FastAPI + SQLite
     </span>

@@ -1,97 +1,80 @@
 """
-Upload router — handles log file ingestion, parsing, and detection.
+Upload router — file upload, parse, detect, user-scoped.
 """
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_user
 from app.detection.engine import run_detection
-from app.models import LogEvent
+from app.models import LogEvent, User
 from app.parsers.auth_log import AuthLogParser
 from app.parsers.nginx import NginxAccessParser
-from app.schemas import UploadResponse
 
 router = APIRouter(prefix="/api/upload", tags=["Upload"])
 
-# Parser instances (stateless, safe to reuse)
 _auth_parser = AuthLogParser()
 _nginx_parser = NginxAccessParser()
 
 
-@router.post("/", response_model=UploadResponse)
-async def upload_log_file(
+@router.post("/")
+async def upload_log(
     file: UploadFile = File(...),
-    log_type: str = "auto",
+    log_type: str = Query("auto"),
+    user: User = Depends(require_user),
     db: Session = Depends(get_db),
-) -> UploadResponse:
-    """
-    Upload a log file for parsing and analysis.
-
-    - **file**: The log file to upload (.log or .txt).
-    - **log_type**: ``"auth"``, ``"nginx"``, or ``"auto"`` (detect from filename).
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided.")
-
+) -> dict:
+    """Upload a log file, parse it, persist events, run detection."""
     content = (await file.read()).decode("utf-8", errors="replace")
-    if not content.strip():
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    # ── Determine parser ─────────────────────────────────────────────────
-    parser = _resolve_parser(file.filename, log_type)
+    parser = _resolve(log_type, file.filename or "unknown.log")
+    parsed = parser.parse_file(content)
 
-    # ── Parse ─────────────────────────────────────────────────────────────
-    parsed_events = parser.parse_file(content)
-    if not parsed_events:
-        raise HTTPException(
-            status_code=422,
-            detail="No valid log lines could be parsed from the file.",
-        )
+    if not parsed:
+        raise HTTPException(status_code=422, detail="No valid log lines could be parsed.")
 
-    # ── Persist events ───────────────────────────────────────────────────
     db_events = [
         LogEvent(
+            user_id=user.id,
             timestamp=ev.timestamp,
             source_ip=ev.source_ip,
             username=ev.username,
             event_type=ev.event_type,
             log_source=ev.log_source,
             raw_line=ev.raw_line,
-            file_name=file.filename,
+            file_name=file.filename or "unknown.log",
         )
-        for ev in parsed_events
+        for ev in parsed
     ]
     db.add_all(db_events)
     db.commit()
 
-    # ── Run detection engine ─────────────────────────────────────────────
-    new_alerts = run_detection(db, file_name=file.filename)
+    new_alerts = run_detection(db, file_name=file.filename or "unknown.log", user_id=user.id)
 
-    return UploadResponse(
-        filename=file.filename,
-        events_parsed=len(db_events),
-        alerts_generated=len(new_alerts),
-        message=f"Successfully parsed {len(db_events)} events and generated {len(new_alerts)} alert(s).",
-    )
+    # Broadcast new events via WebSocket
+    try:
+        from app.websocket.manager import broadcast_events
+        broadcast_events(user.id, db_events)
+    except Exception:
+        pass
+
+    return {
+        "filename": file.filename,
+        "events_parsed": len(db_events),
+        "alerts_generated": len(new_alerts),
+        "message": f"Parsed {len(db_events)} events, generated {len(new_alerts)} alerts.",
+    }
 
 
-def _resolve_parser(filename: str, log_type: str):
-    """Return the appropriate parser based on log_type or filename heuristics."""
+def _resolve(log_type: str, filename: str):
     if log_type == "auth":
         return _auth_parser
     if log_type == "nginx":
         return _nginx_parser
-    if log_type == "auto":
-        lower = filename.lower()
-        if "auth" in lower or "secure" in lower or "sshd" in lower:
-            return _auth_parser
-        if "access" in lower or "nginx" in lower:
-            return _nginx_parser
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            f"Cannot determine log type for '{filename}'. "
-            "Please specify log_type as 'auth' or 'nginx'."
-        ),
-    )
+    lower = filename.lower()
+    if "auth" in lower or "secure" in lower or "sshd" in lower:
+        return _auth_parser
+    if "access" in lower or "nginx" in lower:
+        return _nginx_parser
+    raise HTTPException(400, "Cannot determine log type. Specify 'auth' or 'nginx'.")

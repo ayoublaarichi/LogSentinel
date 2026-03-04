@@ -1,132 +1,129 @@
 """
-LogSentinel — FastAPI application entry point.
+LogSentinel — Multi-Tenant SOC Log Analyzer & Detection Dashboard.
 
-Registers routers, mounts static files, configures Jinja2 templates,
-and exposes the HTML dashboard alongside the JSON API.
+FastAPI application entry point.
 """
 
 import socket
+from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import Depends, FastAPI, Request
+import httpx
+from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
+from sqlalchemy import distinct, func
 from sqlalchemy.orm import Session
 
-from app.config import APP_DESCRIPTION, APP_TITLE, APP_VERSION, STATIC_DIR, TEMPLATES_DIR
+from app.config import (
+    APP_DESCRIPTION,
+    APP_TITLE,
+    APP_VERSION,
+    STATIC_DIR,
+    TEMPLATES_DIR,
+)
 from app.database import get_db, init_db
-from app.models import Alert, LogEvent
-from app.routers import alerts, events, upload
+from app.dependencies import get_current_user, require_user
+from app.models import Alert, LogEvent, User
 
-# ── Application factory ──────────────────────────────────────────────────────
+
+# ── Lifespan ─────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    init_db()
+    yield
+
+
 app = FastAPI(
     title=APP_TITLE,
     description=APP_DESCRIPTION,
     version=APP_VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
-# ── Static files & templates ─────────────────────────────────────────────────
+# ── Static files ─────────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# ── Register API routers ─────────────────────────────────────────────────────
+
+# ── 401 handler — redirect browsers to /login ───────────────────────────────
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 401:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"detail": exc.detail}, status_code=401)
+    # Let FastAPI handle other HTTP exceptions normally
+    if exc.status_code == 422:
+        return JSONResponse({"detail": exc.detail}, status_code=422)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
+# ── Include routers ──────────────────────────────────────────────────────────
+from app.routers import alerts, auth, events, ingest, investigate, search, settings, upload  # noqa: E402
+
+app.include_router(auth.router)
 app.include_router(upload.router)
 app.include_router(events.router)
 app.include_router(alerts.router)
+app.include_router(ingest.router)
+app.include_router(settings.router)
+app.include_router(investigate.router)
+app.include_router(search.router)
 
 
-@app.get("/api/ip", tags=["Info"])
-async def get_ip_info(request: Request) -> dict:
-    """
-    Return the client's visible IP (as seen by the server) plus the
-    server's own LAN IP and public WAN IP.
+# ═══════════════════════════════════════════════════════════════════════════════
+#  HTML page routes
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    - client_ip  : IP of the browser/device making this request
-    - server_lan : LAN IP of the machine running LogSentinel
-    - server_wan : Public WAN IP of the machine running LogSentinel
-    """
-    import httpx as _httpx
-
-    # ── Client (browser) IP ──────────────────────────────────────────────
-    forwarded_for = request.headers.get("x-forwarded-for")
-    client_ip: str = (
-        forwarded_for.split(",")[0].strip()
-        if forwarded_for
-        else (request.client.host if request.client else "unknown")
-    )
-
-    # ── Server LAN IP ────────────────────────────────────────────────────
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _s:
-            _s.connect(("8.8.8.8", 80))
-            server_lan: str = _s.getsockname()[0]
-    except OSError:
-        server_lan = "127.0.0.1"
-
-    # ── Server WAN IP (cached for 60 s to avoid hammering external APIs) ─
-    wan_services = [
-        "https://api.ipify.org",
-        "https://ifconfig.me/ip",
-        "https://icanhazip.com",
-    ]
-    server_wan: str = server_lan  # default
-    try:
-        for url in wan_services:
-            try:
-                r = _httpx.get(url, timeout=5)
-                if r.status_code == 200 and r.text.strip():
-                    server_wan = r.text.strip()
-                    break
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    return {
-        "client_ip": client_ip,
-        "server_lan": server_lan,
-        "server_wan": server_wan,
-    }
-
-
-# ── Startup ──────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-def on_startup() -> None:
-    """Initialise database tables on first run."""
-    init_db()
-
-
-# ── HTML pages ───────────────────────────────────────────────────────────────
-@app.get("/", include_in_schema=False)
-def dashboard(request: Request, db: Session = Depends(get_db)):
-    """Main dashboard page with summary statistics."""
-    total_events = db.query(func.count(LogEvent.id)).scalar() or 0
-    total_alerts = db.query(func.count(Alert.id)).scalar() or 0
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def dashboard(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    total_events = db.query(func.count(LogEvent.id)).filter(LogEvent.user_id == user.id).scalar() or 0
+    total_alerts = db.query(func.count(Alert.id)).filter(Alert.user_id == user.id).scalar() or 0
     critical_alerts = (
-        db.query(func.count(Alert.id)).filter(Alert.severity == "critical").scalar() or 0
+        db.query(func.count(Alert.id))
+        .filter(Alert.user_id == user.id, Alert.severity == "critical")
+        .scalar() or 0
     )
     high_alerts = (
-        db.query(func.count(Alert.id)).filter(Alert.severity == "high").scalar() or 0
+        db.query(func.count(Alert.id))
+        .filter(Alert.user_id == user.id, Alert.severity == "high")
+        .scalar() or 0
     )
     medium_alerts = (
-        db.query(func.count(Alert.id)).filter(Alert.severity == "medium").scalar() or 0
+        db.query(func.count(Alert.id))
+        .filter(Alert.user_id == user.id, Alert.severity == "medium")
+        .scalar() or 0
     )
     unique_ips = (
-        db.query(func.count(func.distinct(LogEvent.source_ip))).scalar() or 0
+        db.query(func.count(distinct(LogEvent.source_ip)))
+        .filter(LogEvent.user_id == user.id, LogEvent.source_ip.isnot(None))
+        .scalar() or 0
     )
     recent_alerts = (
-        db.query(Alert).order_by(Alert.created_at.desc()).limit(10).all()
+        db.query(Alert)
+        .filter(Alert.user_id == user.id)
+        .order_by(Alert.created_at.desc())
+        .limit(5)
+        .all()
     )
     recent_events = (
-        db.query(LogEvent).order_by(LogEvent.timestamp.desc()).limit(10).all()
+        db.query(LogEvent)
+        .filter(LogEvent.user_id == user.id)
+        .order_by(LogEvent.timestamp.desc())
+        .limit(10)
+        .all()
     )
-
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
+            "user": user,
             "total_events": total_events,
             "total_alerts": total_alerts,
             "critical_alerts": critical_alerts,
@@ -139,19 +136,80 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@app.get("/upload", include_in_schema=False)
-def upload_page(request: Request):
-    """Log file upload page."""
-    return templates.TemplateResponse("upload.html", {"request": request})
+@app.get("/upload", response_class=HTMLResponse, include_in_schema=False)
+def upload_page(request: Request, user: User = Depends(require_user)):
+    return templates.TemplateResponse("upload.html", {"request": request, "user": user})
 
 
-@app.get("/events", include_in_schema=False)
-def events_page(request: Request):
-    """Events browser page."""
-    return templates.TemplateResponse("events.html", {"request": request})
+@app.get("/events", response_class=HTMLResponse, include_in_schema=False)
+def events_page(request: Request, user: User = Depends(require_user)):
+    return templates.TemplateResponse("events.html", {"request": request, "user": user})
 
 
-@app.get("/alerts", include_in_schema=False)
-def alerts_page(request: Request):
-    """Alerts viewer page."""
-    return templates.TemplateResponse("alerts.html", {"request": request})
+@app.get("/alerts", response_class=HTMLResponse, include_in_schema=False)
+def alerts_page(request: Request, user: User = Depends(require_user)):
+    return templates.TemplateResponse("alerts.html", {"request": request, "user": user})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Utility API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/ip", tags=["Utility"])
+def get_ip_info(request: Request) -> dict:
+    """Return client IP, server LAN IP, and public WAN IP."""
+    client_ip = request.client.host if request.client else "unknown"
+    server_lan = _get_lan_ip()
+    server_wan = _get_wan_ip()
+    return {"client_ip": client_ip, "server_lan": server_lan, "server_wan": server_wan}
+
+
+def _get_lan_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "unavailable"
+
+
+def _get_wan_ip() -> str:
+    try:
+        r = httpx.get("https://api.ipify.org?format=json", timeout=5)
+        return r.json().get("ip", "unavailable")
+    except Exception:
+        return "unavailable"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  WebSocket endpoint — per-user live event streaming
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.websocket("/ws/events")
+async def ws_events(ws: WebSocket, db: Session = Depends(get_db)):
+    """
+    WebSocket endpoint for real-time event streaming.
+    Reads the session cookie from the WS handshake to identify the user.
+    """
+    from app.services.auth_service import get_user_id_from_cookie
+    from app.websocket.manager import connect, disconnect
+
+    # The WS handshake carries cookies → we can read the session
+    class _FakeRequest:
+        def __init__(self, cookies: dict):
+            self.cookies = cookies
+    fake: Request = _FakeRequest(ws.cookies)  # type: ignore[assignment]
+    user_id = get_user_id_from_cookie(fake)
+
+    if user_id is None:
+        await ws.close(code=4001, reason="Not authenticated")
+        return
+
+    await connect(ws, user_id)
+    try:
+        while True:
+            await ws.receive_text()  # keep alive; we don't expect messages
+    except WebSocketDisconnect:
+        disconnect(ws, user_id)

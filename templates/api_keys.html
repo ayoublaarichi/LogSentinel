@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — API Keys{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-7">
+
+        <h4 class="fw-bold mb-4 d-flex align-items-center gap-2">
+            <i class="bi bi-key-fill text-info"></i>
+            API Keys
+        </h4>
+
+        <!-- New key flash -->
+        {% if new_key %}
+        <div class="alert py-3 px-3 mb-4"
+             style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.3);
+                    color:#3fb950;border-radius:6px">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-check-circle-fill"></i>
+                <strong style="font-size:.85rem">API key created — copy it now!</strong>
+            </div>
+            <code style="font-size:.9rem;word-break:break-all;display:block;
+                         background:rgba(0,0,0,0.3);padding:10px 12px;border-radius:4px;
+                         color:#e6edf3;font-family:var(--ls-font-mono)">{{ new_key }}</code>
+            <small class="d-block mt-2" style="color:var(--ls-text-dim)">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                This key will not be shown again. Store it somewhere safe.
+            </small>
+        </div>
+        {% endif %}
+
+        <!-- Create new key -->
+        <div class="card bg-dark border-secondary mb-4">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-plus-circle text-info"></i>
+                <strong>Create New Key</strong>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/settings/api-keys/create" class="row g-2 align-items-end">
+                    <div class="col-md-8">
+                        <label class="form-label small"
+                               style="color:var(--ls-text-muted);text-transform:uppercase;
+                                      letter-spacing:.06em;font-size:.72rem">Label</label>
+                        <input type="text" name="label" value="default"
+                               class="form-control bg-dark text-light border-secondary"
+                               placeholder="e.g. production-server"
+                               style="font-family:var(--ls-font-mono);font-size:.85rem">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="submit" class="btn btn-info w-100 fw-semibold">
+                            <i class="bi bi-key me-1"></i>Generate
+                        </button>
+                    </div>
+                </form>
+                <small class="text-muted d-block mt-2">
+                    Use API keys to send logs via <code>POST /api/ingest/</code> with
+                    <code>Authorization: Bearer &lt;key&gt;</code>.
+                </small>
+            </div>
+        </div>
+
+        <!-- Existing keys -->
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-list-ul text-info"></i>
+                <strong>Your Keys</strong>
+                <span class="badge ms-2"
+                      style="font-size:.68rem;background:rgba(255,255,255,0.06);
+                             border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">
+                    {{ keys | length }}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                {% if keys %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Label</th>
+                                <th>Prefix</th>
+                                <th>Created</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for k in keys %}
+                            <tr{% if k.revoked_at %} style="opacity:0.5"{% endif %}>
+                                <td class="small fw-semibold">{{ k.label }}</td>
+                                <td><code style="font-size:.8rem">{{ k.key_prefix }}••••••</code></td>
+                                <td class="small text-muted">{{ k.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    {% if k.revoked_at %}
+                                    <span class="badge"
+                                          style="background:rgba(255,45,85,0.15);color:#ff7b72;
+                                                 border:1px solid rgba(255,45,85,0.3);font-size:.7rem">
+                                        Revoked
+                                    </span>
+                                    {% else %}
+                                    <span class="badge"
+                                          style="background:rgba(63,185,80,0.15);color:#3fb950;
+                                                 border:1px solid rgba(63,185,80,0.3);font-size:.7rem">
+                                        Active
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if not k.revoked_at %}
+                                    <form method="POST" action="/settings/api-keys/{{ k.id }}/revoke"
+                                          style="display:inline"
+                                          onsubmit="return confirm('Revoke this API key?')">
+                                        <button type="submit" class="btn btn-sm py-0 px-2"
+                                                style="font-size:.72rem;border:1px solid rgba(255,45,85,0.35);
+                                                       color:var(--ls-sev-critical);border-radius:3px">
+                                            <i class="bi bi-x-circle me-1"></i>Revoke
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <span class="text-muted small">—</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5" style="color:var(--ls-text-dim)">
+                    <i class="bi bi-key fs-1 d-block mb-2"></i>
+                    No API keys yet. Create one to start ingesting logs programmatically.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

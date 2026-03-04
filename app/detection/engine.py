@@ -1,50 +1,36 @@
 """
-Detection engine — evaluates rules against stored log events.
+Detection engine — sliding-window rule evaluation, always scoped by user_id.
 
-The engine groups events by source IP and applies a sliding-window check:
-for each IP, it looks for the first time-window of `rule.window_minutes`
-minutes that contains at least `rule.threshold` matching events.  When
-found, it creates one Alert per (rule, IP) pair and records:
-
-  - event_count  – events inside the winning window
-  - first_seen   – timestamp of the first event in the window
-  - last_seen    – timestamp of the last event in the window
-  - usernames    – JSON list of unique usernames targeted by that IP
-
-Only one alert is created per (rule, IP) combination so we never
-duplicate alerts for the same ongoing attack.
+The core algorithm is a **two-pointer sliding window** (O(n) per IP
+per rule) that avoids loading every event into memory at once.
 """
 
-from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
+from sqlalchemy import asc
 from sqlalchemy.orm import Session
 
 from app.detection.rules import ACTIVE_RULES, DetectionRule
 from app.models import Alert, LogEvent
 
 
-def run_detection(db: Session, file_name: Optional[str] = None) -> list[Alert]:
+def run_detection(
+    db: Session,
+    file_name: str,
+    user_id: Optional[int] = None,
+) -> list[Alert]:
     """
-    Evaluate all active detection rules against events in the database.
+    Evaluate all active detection rules against events belonging to *user_id*
+    from *file_name*.
 
-    Args:
-        db: Active database session.
-        file_name: If supplied, only evaluate events from this upload.
-
-    Returns:
-        List of newly-created Alert objects (already committed to the DB).
+    Returns a list of newly-created Alert objects (already committed).
     """
     new_alerts: list[Alert] = []
 
     for rule in ACTIVE_RULES:
-        alerts = _evaluate_rule(db, rule, file_name)
+        alerts = _evaluate_rule(db, rule, file_name, user_id)
         new_alerts.extend(alerts)
-
-    if new_alerts:
-        db.add_all(new_alerts)
-        db.commit()
 
     return new_alerts
 
@@ -52,104 +38,119 @@ def run_detection(db: Session, file_name: Optional[str] = None) -> list[Alert]:
 def _evaluate_rule(
     db: Session,
     rule: DetectionRule,
-    file_name: Optional[str],
+    file_name: str,
+    user_id: Optional[int],
 ) -> list[Alert]:
     """
-    Evaluate a single detection rule and return generated Alert objects.
-
-    Algorithm (O(n) per IP):
-    1. Query all matching events, ordered by timestamp ascending.
-    2. Group them into per-IP buckets.
-    3. For each IP bucket use a left-pointer / right-pointer sliding window
-       to find the first window of rule.window_minutes that contains >=
-       rule.threshold events.  This avoids re-scanning the list for every
-       anchor point (the naïve O(n²) approach).
-    4. If found, build an Alert; skip IPs that already have one.
+    For one rule, find all IPs with qualifying events in the given file,
+    then run the two-pointer sliding window per IP.
     """
-
-    # ── 1. Query matching events ─────────────────────────────────────────
-    query = db.query(LogEvent).filter(
+    # Base query: events matching this rule's criteria, scoped to user.
+    base = db.query(LogEvent).filter(
+        LogEvent.file_name == file_name,
         LogEvent.event_type.in_(rule.event_types),
         LogEvent.log_source == rule.log_source,
-        LogEvent.source_ip.isnot(None),
     )
-    if file_name:
-        query = query.filter(LogEvent.file_name == file_name)
+    if user_id is not None:
+        base = base.filter(LogEvent.user_id == user_id)
 
-    events: list[LogEvent] = query.order_by(LogEvent.timestamp.asc()).all()
+    # Distinct IPs in this file
+    ip_rows = (
+        base.filter(LogEvent.source_ip.isnot(None))
+        .with_entities(LogEvent.source_ip)
+        .distinct()
+        .all()
+    )
 
-    if not events:
-        return []
+    new_alerts: list[Alert] = []
 
-    # ── 2. Group events by source IP ─────────────────────────────────────
-    # Using defaultdict(list) keeps insertion order per-key (Python 3.7+).
-    ip_events: dict[str, list[LogEvent]] = defaultdict(list)
-    for ev in events:
-        ip_events[ev.source_ip].append(ev)  # type: ignore[index]
-
-    # ── 3. Sliding-window check per IP ───────────────────────────────────
-    window_delta = timedelta(minutes=rule.window_minutes)
-    alerts: list[Alert] = []
-
-    for ip, ev_list in ip_events.items():
-
-        # Skip IPs that already have an alert for this rule (no duplicates).
-        existing = (
-            db.query(Alert)
-            .filter(Alert.rule_name == rule.name, Alert.source_ip == ip)
-            .first()
+    for (ip,) in ip_rows:
+        events = (
+            base.filter(LogEvent.source_ip == ip)
+            .order_by(asc(LogEvent.timestamp))
+            .all()
         )
-        if existing:
-            continue
+        alert = _sliding_window(db, rule, ip, events, user_id)
+        if alert:
+            new_alerts.append(alert)
 
-        # Two-pointer sliding window:
-        #   left  – index of the oldest event in the current window
-        #   right – index of the event we are currently considering
-        # We advance `right` one step at a time; whenever the span from
-        # ev_list[left].timestamp to ev_list[right].timestamp exceeds the
-        # allowed window we advance `left` to shrink the window.
-        n = len(ev_list)
-        left = 0
-        triggered = False
+    return new_alerts
 
-        for right in range(n):
-            # Shrink window from the left until it fits within window_delta
-            while (ev_list[right].timestamp - ev_list[left].timestamp) > window_delta:
-                left += 1
 
-            window_size = right - left + 1
-            if window_size >= rule.threshold:
-                # Found a window that exceeds the threshold for this IP.
-                window_events = ev_list[left : right + 1]
+def _sliding_window(
+    db: Session,
+    rule: DetectionRule,
+    ip: str,
+    events: list[LogEvent],
+    user_id: Optional[int],
+) -> Optional[Alert]:
+    """
+    Two-pointer O(n) sliding window over *events* (already sorted by timestamp).
 
-                # Collect every unique, non-empty username targeted in this window.
-                targeted: list[str] = sorted({
-                    e.username
-                    for e in window_events
-                    if e.username and e.username != "unknown"
-                })
+    If any window of *rule.window_minutes* contains >= *rule.threshold* events,
+    we create an alert (unless an identical one already exists for this user).
+    """
+    if not events:
+        return None
 
-                description = rule.description.format(
-                    count=window_size,
-                    ip=ip,
-                    window=rule.window_minutes,
-                    threshold=rule.threshold,
-                )
-                alert = Alert(
-                    rule_name=rule.name,
-                    severity=rule.severity,
-                    source_ip=ip,
-                    event_count=window_size,
-                    first_seen=window_events[0].timestamp,
-                    last_seen=window_events[-1].timestamp,
-                    description=description,
-                    usernames=Alert.encode_usernames(targeted),
-                )
-                alerts.append(alert)
-                triggered = True
-                break  # One alert per (rule, IP) is sufficient
+    window = timedelta(minutes=rule.window_minutes)
+    left = 0
+    max_count = 0
+    best_left = 0
+    best_right = 0
 
-        # `triggered` is unused after the loop but kept for readability.
-        _ = triggered
+    for right in range(len(events)):
+        # Shrink left pointer while outside window
+        while events[right].timestamp - events[left].timestamp > window:
+            left += 1
 
-    return alerts
+        current = right - left + 1
+        if current > max_count:
+            max_count = current
+            best_left = left
+            best_right = right
+
+    if max_count < rule.threshold:
+        return None
+
+    # Collect usernames from the window
+    usernames = sorted(
+        {
+            ev.username
+            for ev in events[best_left : best_right + 1]
+            if ev.username and ev.username != "unknown"
+        }
+    )
+
+    # Check for existing alert with same rule + IP + user
+    exists_q = db.query(Alert).filter(
+        Alert.rule_name == rule.name,
+        Alert.source_ip == ip,
+    )
+    if user_id is not None:
+        exists_q = exists_q.filter(Alert.user_id == user_id)
+    if exists_q.first():
+        return None
+
+    description = rule.description.format(
+        count=max_count,
+        ip=ip,
+        window=rule.window_minutes,
+        threshold=rule.threshold,
+    )
+
+    alert = Alert(
+        user_id=user_id,
+        rule_name=rule.name,
+        severity=rule.severity,
+        source_ip=ip,
+        event_count=max_count,
+        first_seen=events[best_left].timestamp,
+        last_seen=events[best_right].timestamp,
+        description=description,
+        usernames=Alert.encode_usernames(usernames),
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    return alert
