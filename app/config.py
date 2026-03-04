@@ -25,12 +25,22 @@ DATABASE_URL: str = f"sqlite:///{_DATA_DIR / 'logsentinel.db'}"
 APP_TITLE: str = "LogSentinel"
 APP_DESCRIPTION: str = "Multi-Tenant SOC Log Analyzer & Alert Dashboard"
 APP_VERSION: str = "2.0.0"
-DEBUG: bool = True
+DEBUG: bool = not _ON_VERCEL  # auto-disable debug on Vercel
 
 # ── Auth / session settings ──────────────────────────────────────────────────
-SECRET_KEY: str = os.environ.get("LOGSENTINEL_SECRET", "change-me-in-production-32chars!!")
+_secret_env = os.environ.get("LOGSENTINEL_SECRET", "")
+_DEV_FALLBACK = "change-me-in-production-32chars!!"
+if _ON_VERCEL and (not _secret_env or _secret_env == _DEV_FALLBACK):
+    raise RuntimeError(
+        "LOGSENTINEL_SECRET env var must be set to a strong random value in production. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+    )
+SECRET_KEY: str = _secret_env or _DEV_FALLBACK
 SESSION_COOKIE_NAME: str = "ls_session"
 SESSION_MAX_AGE: int = 86400 * 7  # 7 days
+# Cookie security flags driven by environment
+SESSION_COOKIE_SECURE: bool = _ON_VERCEL   # True on HTTPS (Vercel), False locally
+SESSION_COOKIE_SAMESITE: str = "lax"       # prevents CSRF while allowing top-level nav
 
 # ── Rate limiting (in-memory, per-process) ───────────────────────────────────
 INGEST_RATE_LIMIT: int = 60          # max requests per window

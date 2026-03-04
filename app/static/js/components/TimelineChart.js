@@ -27,7 +27,8 @@ export default class TimelineChart {
 
     async load(hours = 24) {
         try {
-            const resp = await fetch(`/api/events/timeline?hours=${hours}`);
+            const resp = await fetch(`/api/events/timeline?hours=${hours}`, { credentials: 'same-origin' });
+            if (resp.status === 401) { window.location.href = '/login'; return; }
             if (!resp.ok) return;
             const data = await resp.json();
             this.#render(data, hours);

@@ -312,8 +312,9 @@ async function loadIpInfo() {
     try {
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 8000);
-        const resp = await fetch('/api/whoami', { signal: controller.signal });
+        const resp = await fetch('/api/whoami', { signal: controller.signal, credentials: 'same-origin' });
         clearTimeout(tid);
+        if (resp.status === 401) { window.location.href = '/login'; return; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const d = await resp.json();
         setVal('ipClient', d.client_ip, d.client_ip_class);

@@ -209,7 +209,8 @@ function countUp(el, target) {
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadStats() {
     try {
-        const resp = await fetch('/api/alerts/stats');
+        const resp = await fetch('/api/alerts/stats', { credentials: 'same-origin' });
+        if (resp.status === 401) { window.location.href = '/login'; return; }
         const s    = await resp.json();
         ['Critical', 'High', 'Medium', 'Low'].forEach(k => {
             const el = document.getElementById('stat' + k);
@@ -232,7 +233,8 @@ async function loadAlerts() {
     if (ip)   params.set('source_ip', ip);
 
     try {
-        const resp   = await fetch(`/api/alerts/?${params}`);
+        const resp   = await fetch(`/api/alerts/?${params}`, { credentials: 'same-origin' });
+        if (resp.status === 401) { window.location.href = '/login'; return; }
         const alerts = await resp.json();
         renderAlerts(alerts);
     } catch (err) {
@@ -342,7 +344,8 @@ async function openDetail(alertId) {
     _detailPane.show();
 
     try {
-        const resp = await fetch(`/api/alerts/${alertId}`);
+        const resp = await fetch(`/api/alerts/${alertId}`, { credentials: 'same-origin' });
+        if (resp.status === 401) { window.location.href = '/login'; return; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const a = await resp.json();
         renderDetail(a);
@@ -503,7 +506,7 @@ function renderDetail(a) {
 async function dismissAlert(id) {
     if (!confirm('Dismiss this alert?')) return;
     _detailPane.hide();
-    await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
+    await fetch(`/api/alerts/${id}`, { method: 'DELETE', credentials: 'same-origin' });
     loadAlerts();
     loadStats();
 }

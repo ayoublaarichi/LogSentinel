@@ -2,6 +2,7 @@
 FastAPI dependencies — authentication guards, rate limiting, API-key auth.
 """
 
+import logging
 import time
 from collections import defaultdict
 from typing import Optional
@@ -13,6 +14,8 @@ from app.config import INGEST_RATE_LIMIT, INGEST_RATE_WINDOW
 from app.database import get_db
 from app.models import User
 from app.services.auth_service import get_current_user as _get_current_user
+
+logger = logging.getLogger("logsentinel.auth")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -27,13 +30,9 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Raise 401 if user is not authenticated — use on protected endpoints."""
     user = _get_current_user(request, db)
     if user is None:
-        # For HTML pages we redirect; for API calls we 401.
-        accept = request.headers.get("accept", "")
-        if "text/html" in accept:
-            from fastapi.responses import RedirectResponse
-            # We can't return a response from a Depends, so use an exception
-            # with a custom handler registered on the app, or redirect via exception.
-            raise HTTPException(status_code=401, detail="Not authenticated")
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info("Auth denied: %s %s from %s (no valid session)",
+                    request.method, request.url.path, client_ip)
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 

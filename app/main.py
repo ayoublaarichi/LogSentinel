@@ -47,20 +47,32 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ── 401 handler — redirect browsers to /login ───────────────────────────────
+# ── 401 handler — redirect browsers to /login, return JSON for API calls ─────
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+def _wants_html(request: Request) -> bool:
+    """True if the client expects an HTML response (browser navigation)."""
+    accept = request.headers.get("accept", "")
+    # fetch() calls from JS typically send */* or application/json.
+    # Browser navigation sends text/html explicitly.
+    if "text/html" in accept and "application/json" not in accept:
+        return True
+    # Extra safeguard: API paths never redirect
+    if request.url.path.startswith("/api/"):
+        return False
+    # XMLHttpRequest / fetch often set X-Requested-With
+    if request.headers.get("x-requested-with", "").lower() == "xmlhttprequest":
+        return False
+    return "text/html" in accept
 
 
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code == 401:
-        accept = request.headers.get("accept", "")
-        if "text/html" in accept:
+        if _wants_html(request):
             return RedirectResponse("/login", status_code=303)
         return JSONResponse({"detail": exc.detail}, status_code=401)
-    # Let FastAPI handle other HTTP exceptions normally
-    if exc.status_code == 422:
-        return JSONResponse({"detail": exc.detail}, status_code=422)
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 

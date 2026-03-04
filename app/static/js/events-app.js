@@ -299,7 +299,12 @@ function onDetailAction(key, ev, extra = {}) {
    Helpers
    ═══════════════════════════════════════════════════════════════════════════ */
 async function apiFetch(url) {
-    const r = await fetch(url);
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (r.status === 401) {
+        // Session expired — redirect to login
+        window.location.href = '/login';
+        throw new Error('Session expired');
+    }
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
     return r.json();
 }
