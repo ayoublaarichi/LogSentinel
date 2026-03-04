@@ -35,11 +35,17 @@ _IS_PRODUCTION: bool = _ON_VERCEL or _ENV == "production"
 UPLOAD_DIR: Path = _DATA_DIR / "uploads"
 
 # ── Database ─────────────────────────────────────────────────────────────────
-_db_env = os.environ.get("DATABASE_URL", "").strip()
+_db_env = (
+    os.environ.get("DATABASE_URL", "").strip()
+    or os.environ.get("POSTGRES_URL_NON_POOLING", "").strip()
+    or os.environ.get("POSTGRES_URL", "").strip()
+    or os.environ.get("POSTGRES_PRISMA_URL", "").strip()
+)
 if _IS_PRODUCTION:
     if not _db_env:
         raise RuntimeError(
-            "DATABASE_URL is required in production (Vercel/ENV=production). "
+            "DATABASE_URL (or POSTGRES_URL/POSTGRES_URL_NON_POOLING) is required in production "
+            "(Vercel/ENV=production). "
             "Use a persistent Postgres database. Example: "
             "postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME"
         )
@@ -51,6 +57,8 @@ else:
 # Accept Heroku-style postgres:// URLs by normalizing for SQLAlchemy.
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 # ── Application ──────────────────────────────────────────────────────────────
 APP_TITLE: str = "LogSentinel"
