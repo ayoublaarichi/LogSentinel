@@ -57,15 +57,23 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
 # ═══════════════════════════════════════════════════════════════════════════════
 def require_api_key_user(request: Request, db: Session = Depends(get_db)) -> User:
     """
-    Authenticate via ``Authorization: Bearer <api_key>`` header.
+    Authenticate via either:
+
+    - ``Authorization: Bearer <api_key>``
+    - ``X-API-Key: <api_key>``
+
     Returns the User who owns the key or raises 401.
     """
     from app.services.api_key_service import validate_api_key
 
     auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing Authorization: Bearer <key>")
-    raw_key = auth[7:].strip()
+    x_api_key = request.headers.get("x-api-key", "").strip()
+    if x_api_key:
+        raw_key = x_api_key
+    else:
+        if not auth.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="Missing API key (Bearer or X-API-Key)")
+        raw_key = auth[7:].strip()
     if not raw_key:
         raise HTTPException(status_code=401, detail="Empty API key")
 

@@ -30,12 +30,14 @@ const state = {
     selectedEvent:  null,
     chips:          [],
     loading:        false,
+    threatIntel:    new Map(),
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Component instances
    ═══════════════════════════════════════════════════════════════════════════ */
 let filterBar, eventTable, eventDetails, rawViewer, timeline;
+let ws = null;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Boot
@@ -43,6 +45,7 @@ let filterBar, eventTable, eventDetails, rawViewer, timeline;
 document.addEventListener('DOMContentLoaded', async () => {
     initComponents();
     bindActions();
+    initRealtime();
     await loadData();
     timeline.load(24);
 
@@ -226,6 +229,55 @@ function onRowSelect(ev) {
     state.selectedEvent = ev;
     eventDetails.show(ev);
     rawViewer.show(ev);
+    enrichThreatIntel(ev);
+}
+
+async function enrichThreatIntel(ev) {
+    if (!ev || !ev.source_ip) return;
+    const ip = ev.source_ip;
+    const cached = state.threatIntel.get(ip);
+    if (cached) {
+        ev._threat = cached;
+        eventDetails.show(ev);
+        return;
+    }
+    try {
+        const intel = await apiFetch(`/api/threat-intel/${encodeURIComponent(ip)}`);
+        state.threatIntel.set(ip, intel);
+        ev._threat = intel;
+        if (state.selectedEvent && state.selectedEvent.id === ev.id) {
+            eventDetails.show(ev);
+        }
+    } catch (err) {
+        console.warn('[events-app] threat intel fetch failed', err);
+    }
+}
+
+function initRealtime() {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${window.location.host}/ws/events`;
+    ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+        try {
+            const incoming = JSON.parse(event.data);
+            if (!Array.isArray(incoming) || !incoming.length) return;
+            const enriched = incoming.map(enrichEvent);
+            const existingIds = new Set(state.allEvents.map(e => e.id));
+            const fresh = enriched.filter(e => !existingIds.has(e.id));
+            if (!fresh.length) return;
+            state.allEvents = [...fresh, ...state.allEvents];
+            applyFilters();
+            toast(`Live update: ${fresh.length} new event${fresh.length > 1 ? 's' : ''}`, 'info');
+            timeline.load(24);
+        } catch (err) {
+            console.warn('[events-app] websocket parse failed', err);
+        }
+    };
+
+    ws.onclose = () => {
+        setTimeout(initRealtime, 3000);
+    };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

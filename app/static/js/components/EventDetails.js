@@ -77,6 +77,19 @@ export default class EventDetails {
                 { k: 'file_name',  label: 'Source File', v: ev.file_name              },
             ],
         },
+        {
+            id: 'threat',
+            icon: 'bi-shield-fill-exclamation',
+            label: 'Threat Intel',
+            visible: ev => !!ev._threat,
+            fields: ev => [
+                { k: 'country',          label: 'Country',         v: ev._threat?.country || 'Unknown' },
+                { k: 'asn',              label: 'ASN',             v: ev._threat?.asn || '—' },
+                { k: 'isp',              label: 'ISP',             v: ev._threat?.isp || '—' },
+                { k: 'is_tor',           label: 'Tor / Proxy',     v: ev._threat?.is_tor ? 'Yes' : 'No' },
+                { k: 'reputation_score', label: 'Reputation Score',v: ev._threat?.reputation_score ?? '—' },
+            ],
+        },
     ];
 
     constructor(paneSel, { onAction } = {}) {
