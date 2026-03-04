@@ -115,7 +115,7 @@ def create_session_cookie(
     response: Response, user_id: int, *, remember: bool = False,
     request: Optional[Request] = None,
 ) -> None:
-    token = _serializer.dumps({"uid": user_id})
+    token = _serializer.dumps({"uid": user_id, "r": bool(remember)})
     age = REMEMBER_ME_MAX_AGE if remember else SESSION_MAX_AGE
     secure = _is_secure_context(request)
     response.set_cookie(
@@ -148,7 +148,12 @@ def get_user_id_from_cookie(request: Request) -> Optional[int]:
         logger.debug("Auth: no session cookie '%s' in request", SESSION_COOKIE_NAME)
         return None
     try:
-        data = _serializer.loads(token, max_age=REMEMBER_ME_MAX_AGE)
+        # First decode without max_age to inspect remember flag.
+        data = _serializer.loads(token)
+        remember = bool(data.get("r", False))
+        max_age = REMEMBER_ME_MAX_AGE if remember else SESSION_MAX_AGE
+        # Re-verify signature and expiry with correct max_age.
+        data = _serializer.loads(token, max_age=max_age)
         uid = data.get("uid")
         if uid is None:
             logger.warning("Auth: session token decoded but missing 'uid' key")

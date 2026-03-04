@@ -2,13 +2,14 @@
 Events router — list / filter / timeline / metadata, always scoped by user_id.
 """
 
+from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import distinct, func
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import _IS_SQLITE, get_db
 from app.dependencies import require_user
 from app.models import LogEvent, User
 from app.schemas import LogEventOut
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/api/events", tags=["Events"])
 
 
 @router.get("/", response_model=list[LogEventOut])
+@router.get("", response_model=list[LogEventOut], include_in_schema=False)
 def list_events(
     source_ip: Optional[str] = Query(None),
     event_type: Optional[str] = Query(None),
@@ -48,24 +50,46 @@ def list_events(
 
 @router.get("/timeline")
 def event_timeline(
+    hours: int = Query(24, ge=1, le=168),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """Return event counts grouped by hour for the last 24h."""
-    from datetime import datetime, timedelta
+    """Return event counts grouped by hour for the last ``hours`` hours.
 
-    cutoff = datetime.utcnow() - timedelta(hours=24)
+    Uses dialect-specific SQL grouping so it works on both SQLite and Postgres.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    if _IS_SQLITE:
+        hour_expr = func.strftime("%Y-%m-%dT%H:00:00", LogEvent.timestamp)
+        rows = (
+            db.query(
+                hour_expr.label("hour"),
+                func.count(LogEvent.id).label("count"),
+            )
+            .filter(LogEvent.user_id == user.id, LogEvent.timestamp >= cutoff)
+            .group_by(hour_expr)
+            .order_by(hour_expr)
+            .all()
+        )
+        return [{"hour": r.hour, "count": r.count} for r in rows]
+
+    # Postgres path
+    hour_expr = func.date_trunc("hour", LogEvent.timestamp)
     rows = (
         db.query(
-            func.strftime("%Y-%m-%dT%H:00:00", LogEvent.timestamp).label("hour"),
+            hour_expr.label("hour"),
             func.count(LogEvent.id).label("count"),
         )
         .filter(LogEvent.user_id == user.id, LogEvent.timestamp >= cutoff)
-        .group_by("hour")
-        .order_by("hour")
+        .group_by(hour_expr)
+        .order_by(hour_expr)
         .all()
     )
-    return [{"hour": r.hour, "count": r.count} for r in rows]
+    return [
+        {"hour": r.hour.isoformat() if hasattr(r.hour, "isoformat") else str(r.hour), "count": r.count}
+        for r in rows
+    ]
 
 
 @router.get("/types")

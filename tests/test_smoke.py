@@ -209,6 +209,16 @@ class TestEvents:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
+    def test_event_timeline_hours_param(self, client):
+        r = client.get("/api/events/timeline?hours=6")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_events_no_trailing_slash_alias(self, client):
+        r = client.get("/api/events?per_page=5")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
 
 # ---------------------------------------------------------------------------
 #  5. CORS & OPTIONS preflight
