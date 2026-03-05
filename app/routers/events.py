@@ -2,7 +2,6 @@
 Events router — list / filter / timeline / metadata, always scoped by user_id.
 """
 
-import ipaddress
 import random
 from datetime import datetime, timedelta
 from typing import Optional
@@ -13,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database import _IS_SQLITE, get_db
 from app.dependencies import require_user
-from app.models import AuditLog, LogEvent, Project, User
+from app.models import LogEvent, Project, User
 from app.schemas import LogEventOut
 from app.services.project_service import get_user_project_or_default
 from app.services.threat_intel_service import enrich_ip
@@ -28,42 +27,9 @@ def _extract_client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-def _private_ipv4_prefix(client_ip: str) -> Optional[str]:
-    """Return /24 prefix for private IPv4 addresses, e.g. "192.168.1."."""
-    try:
-        addr = ipaddress.ip_address(client_ip)
-        if addr.version == 4 and addr.is_private:
-            parts = client_ip.split(".")
-            return f"{parts[0]}.{parts[1]}.{parts[2]}."
-    except ValueError:
-        return None
-    return None
-
-
 def _visible_user_ids(db: Session, user: User, request: Request) -> list[int]:
-    """Users sharing events: same account OR same client IP OR same private LAN /24."""
-    ids = {user.id}
-    client_ip = _extract_client_ip(request)
-    if not client_ip:
-        return list(ids)
-
-    same_ip_rows = (
-        db.query(distinct(AuditLog.user_id))
-        .filter(AuditLog.user_id.isnot(None), AuditLog.ip_address == client_ip)
-        .all()
-    )
-    ids.update(r[0] for r in same_ip_rows if r and r[0] is not None)
-
-    prefix = _private_ipv4_prefix(client_ip)
-    if prefix:
-        same_lan_rows = (
-            db.query(distinct(AuditLog.user_id))
-            .filter(AuditLog.user_id.isnot(None), AuditLog.ip_address.like(f"{prefix}%"))
-            .all()
-        )
-        ids.update(r[0] for r in same_lan_rows if r and r[0] is not None)
-
-    return list(ids)
+    """Strict tenant isolation: only the authenticated user's data is visible."""
+    return [user.id]
 
 
 def _resolve_project_filter(db: Session, user: User, project_id: Optional[int]) -> Optional[int]:
