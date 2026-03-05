@@ -31,7 +31,6 @@ if _IS_SQLITE:
 elif _IS_POSTGRES:
     _engine_kwargs["connect_args"] = {
         "connect_timeout": 10,
-        "options": "-c statement_timeout=15000",
     }
 
 if _USE_NULLPOOL:
