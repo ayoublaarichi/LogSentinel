@@ -6,7 +6,6 @@ import logging
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from sqlalchemy.pool import NullPool
 
 from app.config import DATABASE_URL, _ON_VERCEL
 
@@ -18,7 +17,7 @@ _URL_LOWER = DATABASE_URL.lower()
 _USING_EXTERNAL_POOLER = any(
     hint in _URL_LOWER for hint in ("pooler.", "-pooler", "pgbouncer", "connection_limit=")
 )
-_USE_NULLPOOL = _IS_POSTGRES and (_ON_VERCEL or _USING_EXTERNAL_POOLER)
+_USE_TINY_POOL = _IS_POSTGRES and (_ON_VERCEL or _USING_EXTERNAL_POOLER)
 
 # ── Engine & session ─────────────────────────────────────────────────────────
 _engine_kwargs = {
@@ -32,10 +31,14 @@ elif _IS_POSTGRES:
     _engine_kwargs["connect_args"] = {
         "connect_timeout": 10,
     }
-
-if _USE_NULLPOOL:
-    _engine_kwargs["poolclass"] = NullPool
-    logger.info("Using NullPool for serverless/pooled Postgres connections")
+    if _USE_TINY_POOL:
+        _engine_kwargs.update(
+            pool_size=1,
+            max_overflow=1,
+            pool_timeout=20,
+            pool_recycle=300,
+        )
+        logger.info("Using tiny SQLAlchemy pool for serverless/pooled Postgres")
 
 engine = create_engine(
     DATABASE_URL,
