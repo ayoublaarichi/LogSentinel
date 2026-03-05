@@ -16,6 +16,7 @@ A portfolio-grade security operations tool built with **Python / FastAPI** that 
 | **Detection Rules** | SSH Brute Force (≥ 6 failures / 10 min), Nginx Flood (≥ 200 req / 2 min) |
 | **Alerts Dashboard** | Severity badges, filtering, dismiss/acknowledge actions |
 | **Events Browser** | Paginated table with filters (IP, type, source, time range) |
+| **Live Refresh (MVP)** | Events stream via WebSocket; Dashboard/Alerts auto-refresh key data every 10s |
 | **REST API** | Full JSON API at `/docs` (Swagger) and `/redoc` |
 
 ---

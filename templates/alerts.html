@@ -588,5 +588,12 @@ document.getElementById('alertFilterForm').addEventListener('submit', e => {
 
 loadStats();
 loadAlerts();
+
+const ALERTS_POLL_MS = 10_000;
+setInterval(() => {
+    if (document.hidden) return;
+    loadStats();
+    loadAlerts();
+}, ALERTS_POLL_MS);
 </script>
 {% endblock %}
