@@ -602,3 +602,27 @@ class TestSIEMFeatures:
         assert "score" in chain
         assert "phases" in chain
         assert isinstance(chain["phases"], list)
+
+        save_chain_r = client.post(
+            f"/api/cases/{case_id}/chains/save",
+            json={"chain": chain},
+        )
+        assert save_chain_r.status_code == 200
+        saved = save_chain_r.json()
+        assert saved.get("case_id") == case_id
+
+        detail_after_r = client.get(f"/api/cases/{case_id}")
+        assert detail_after_r.status_code == 200
+        detail_after = detail_after_r.json()
+        assert isinstance(detail_after.get("chain_snapshots"), list)
+        assert detail_after.get("chain_snapshots")
+        assert isinstance(detail_after.get("activities"), list)
+        assert detail_after.get("activities")
+
+        summary_r = client.get("/api/dashboard/summary")
+        assert summary_r.status_code == 200
+        summary = summary_r.json()
+        assert "open_alerts" in summary
+        assert "open_cases" in summary
+        assert "high_risk_ips" in summary
+        assert "events_last_24h" in summary

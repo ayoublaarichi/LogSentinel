@@ -1,3 +1,5 @@
+import copy
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,6 +15,8 @@ from app.services.threat_intel_service import enrich_ip
 router = APIRouter(tags=["Chains"])
 
 _MAX_EVENTS = 500
+_CACHE_TTL_SECONDS = 60
+_CHAIN_CACHE: dict[str, tuple[float, dict]] = {}
 
 _PHASE_ORDER = [
     "Reconnaissance",
@@ -91,10 +95,38 @@ def build_chain(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    return build_chain_payload(
+        db=db,
+        user=user,
+        ip=ip,
+        user_name=user_name,
+        host=host,
+        alert_id=alert_id,
+        hours=hours,
+        project_id=project_id,
+    )
+
+
+def build_chain_payload(
+    db: Session,
+    user: User,
+    ip: Optional[str],
+    user_name: Optional[str],
+    host: Optional[str],
+    alert_id: Optional[int],
+    hours: int,
+    project_id: Optional[int],
+) -> dict:
     if not any([ip, user_name, host, alert_id]):
         raise HTTPException(status_code=400, detail="Provide at least one of ip, user, host, or alert_id")
 
     project_filter = _resolve_project_filter(db, user, project_id)
+
+    cache_key = f"u={user.id}|p={project_filter}|ip={ip}|user={user_name}|host={host}|alert={alert_id}|h={hours}"
+    now = time.time()
+    cached = _CHAIN_CACHE.get(cache_key)
+    if cached and (now - cached[0]) <= _CACHE_TTL_SECONDS:
+        return copy.deepcopy(cached[1])
 
     if alert_id and not any([ip, user_name, host]):
         alert = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user.id).first()
@@ -119,7 +151,7 @@ def build_chain(
     if not events:
         entity_type = "ip" if ip else "user" if user_name else "host"
         entity_value = ip or user_name or host or "unknown"
-        return {
+        result = {
             "chain_id": f"chain:{entity_type}:{entity_value}:{datetime.utcnow().strftime('%Y%m%d%H')}",
             "entity": {"type": entity_type, "value": entity_value},
             "window_hours": hours,
@@ -129,6 +161,8 @@ def build_chain(
             "summary": "No matching events in the selected window.",
             "next_actions": ["Expand time window", "Review related alerts"],
         }
+        _CHAIN_CACHE[cache_key] = (now, result)
+        return copy.deepcopy(result)
 
     clusters = _cluster_sessions(events)
 
@@ -250,7 +284,7 @@ def build_chain(
     entity_type = "ip" if ip else "user" if user_name else "host"
     entity_value = ip or user_name or host or "unknown"
 
-    return {
+    result = {
         "chain_id": f"chain:{entity_type}:{entity_value}:{datetime.utcnow().strftime('%Y%m%d%H')}",
         "entity": {"type": entity_type, "value": entity_value},
         "window_hours": hours,
@@ -260,3 +294,13 @@ def build_chain(
         "summary": _build_summary(score, has_recon, has_cred, has_init, has_priv, has_impact, is_tor),
         "next_actions": _next_actions(score, has_init, has_priv, has_impact),
     }
+    _CHAIN_CACHE[cache_key] = (now, result)
+
+    # best-effort small eviction to keep memory bounded
+    if len(_CHAIN_CACHE) > 200:
+        cutoff = now - _CACHE_TTL_SECONDS
+        stale = [k for k, (ts, _v) in _CHAIN_CACHE.items() if ts < cutoff]
+        for key in stale[:150]:
+            _CHAIN_CACHE.pop(key, None)
+
+    return copy.deepcopy(result)

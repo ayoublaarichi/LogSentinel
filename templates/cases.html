@@ -7,6 +7,7 @@
     <div class="col-lg-4">
         <div class="card bg-dark border-secondary mb-3">
             <div class="card-header d-flex align-items-center gap-2">
+let latestBuiltChain = null;
                 <i class="bi bi-folder-plus text-info"></i>
                 <strong>Create Case</strong>
             </div>
@@ -27,6 +28,8 @@
             </div>
         </div>
 
+    const activities = c.activities || [];
+    const snapshots = c.chain_snapshots || [];
         <div class="card bg-dark border-secondary">
             <div class="card-header d-flex align-items-center gap-2">
                 <i class="bi bi-collection text-info"></i>
@@ -53,6 +56,26 @@
                             <option value="low">Low</option>
                         </select>
                     </div>
+
+        <div class="mb-2">
+            <div class="fw-semibold mb-1">Chain Snapshots (${snapshots.length})</div>
+            ${snapshots.length ? snapshots.map(s => `
+                <div class="small mb-2 p-2" style="background:rgba(188,140,255,0.08);border:1px solid rgba(188,140,255,0.25)">
+                    <div>${escHtml(s.chain_id)} · ${escHtml(s.confidence)} · score ${s.score}</div>
+                    <div class="text-muted">${fmt(s.created_at)}</div>
+                    <div>${escHtml(s.summary || '')}</div>
+                </div>
+            `).join('') : '<div class="small text-muted">No chain snapshots saved.</div>'}
+        </div>
+
+        <div class="mb-2">
+            <div class="fw-semibold mb-1">Case Activity</div>
+            ${activities.length ? activities.slice(0, 12).map(a => `
+                <div class="small mb-1 text-muted">
+                    ${fmt(a.created_at)} · ${escHtml(a.actor || 'analyst')} · ${escHtml(a.action)}${a.detail ? ` · ${escHtml(a.detail)}` : ''}
+                </div>
+            `).join('') : '<div class="small text-muted">No activity yet.</div>'}
+        </div>
                 </div>
                 <div id="casesList" class="d-grid gap-2"></div>
             </div>
@@ -73,11 +96,21 @@
     </div>
 </div>
 {% endblock %}
-
 {% block scripts %}
 <script>
 let selectedCaseId = null;
 
+
+async function saveChainToCase(caseId) {
+    if (!latestBuiltChain || !caseId) return;
+    const resp = await api(`/api/cases/${caseId}/chains/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chain: latestBuiltChain }),
+    });
+    if (!resp.ok) return;
+    await selectCase(caseId);
+}
 function activeProjectId() {
     return localStorage.getItem('ls_active_project_id') || '';
 }
@@ -292,6 +325,7 @@ async function buildChain(ip) {
     const resp = await api(`/api/chains/build?${params.toString()}`);
     if (!resp.ok) return;
     const chain = await resp.json();
+    latestBuiltChain = chain;
 
     const phases = (chain.phases || []).map(p =>
         `<div class="small mb-2"><strong>${escHtml(p.name)}</strong> (${p.score})<br>${(p.events || []).slice(0, 2).map(e => escHtml(e.message || '')).join('<br>')}</div>`
@@ -303,6 +337,9 @@ async function buildChain(ip) {
         <div class="mt-3 p-2" style="background:rgba(188,140,255,0.08);border:1px solid rgba(188,140,255,0.3)">
             <div class="fw-semibold">Attack Chain (${escHtml(chain.confidence)} confidence · score ${chain.score})</div>
             <div class="small text-muted mb-2">${escHtml(chain.summary || '')}</div>
+            <button class="btn btn-sm btn-outline-info mb-2" onclick="saveChainToCase(${selectedCaseId})">
+                <i class="bi bi-save me-1"></i>Save to Case
+            </button>
             ${phases || '<div class="small text-muted">No phases detected.</div>'}
         </div>
     `;

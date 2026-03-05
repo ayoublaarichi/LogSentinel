@@ -4,6 +4,17 @@
 
 A portfolio-grade security operations tool built with **Python / FastAPI** that ingests Linux `auth.log` and Nginx access logs, parses them into structured security events, and runs detection rules to surface actionable alerts — all served through a professional dark-themed dashboard.
 
+## 🎬 SOC Workflow Demo
+
+1. Start LogSentinel
+2. Ingest logs (`/upload` or `/api/ingest`)
+3. Trigger detection rules
+4. Review generated alerts
+5. Build attack chain (`/api/chains/build`)
+6. Create case and link alerts (`/cases`)
+7. Investigate timeline + graph (`/investigate`, `/graph`)
+8. Add notes, save chain snapshot, and close incident
+
 ---
 
 ## ✨ Features

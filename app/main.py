@@ -7,6 +7,7 @@ FastAPI application entry point.
 import logging
 import socket
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
@@ -28,7 +29,7 @@ from app.config import (
 )
 from app.database import get_db, init_db
 from app.dependencies import get_current_user, require_user
-from app.models import Alert, LogEvent, Project, User
+from app.models import Alert, Case, LogEvent, Project, User
 from app.templating import templates
 
 logger = logging.getLogger("logsentinel.app")
@@ -276,6 +277,45 @@ def whoami(request: Request, user: User = Depends(require_user)) -> dict:
         "server_wan": server_wan,
         "server_wan_class": _classify_ip(server_wan),
         "environment": "cloud" if _ON_VERCEL else "self-hosted",
+    }
+
+
+@app.get("/api/dashboard/summary", tags=["Utility"])
+def dashboard_summary(
+    project_id: Optional[int] = None,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project_filter = None
+    if project_id is not None:
+        project = db.query(Project).filter(Project.id == project_id, Project.user_id == user.id).first()
+        if not project:
+            return JSONResponse(status_code=404, content={"detail": "Project not found"})
+        project_filter = project.id
+
+    since = datetime.utcnow() - timedelta(hours=24)
+
+    alerts_q = db.query(Alert).filter(Alert.user_id == user.id)
+    cases_q = db.query(Case).filter(Case.user_id == user.id)
+    events_q = db.query(LogEvent).filter(LogEvent.user_id == user.id)
+    if project_filter is not None:
+        alerts_q = alerts_q.filter(Alert.project_id == project_filter)
+        cases_q = cases_q.filter(Case.project_id == project_filter)
+        events_q = events_q.filter(LogEvent.project_id == project_filter)
+
+    open_alerts = alerts_q.with_entities(func.count(Alert.id)).scalar() or 0
+    open_cases = cases_q.filter(Case.status.in_(["open", "investigating"]))\
+        .with_entities(func.count(Case.id)).scalar() or 0
+    high_risk_ips = alerts_q.filter(Alert.severity.in_(["critical", "high"]))\
+        .with_entities(func.count(distinct(Alert.source_ip))).scalar() or 0
+    events_24h = events_q.filter(LogEvent.timestamp >= since).with_entities(func.count(LogEvent.id)).scalar() or 0
+
+    return {
+        "open_alerts": int(open_alerts),
+        "open_cases": int(open_cases),
+        "high_risk_ips": int(high_risk_ips),
+        "events_last_24h": int(events_24h),
+        "project_id": project_filter,
     }
 
 

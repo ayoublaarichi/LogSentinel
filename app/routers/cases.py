@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
@@ -7,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_user
-from app.models import Alert, Case, CaseAlert, CaseNote, Project, User
+from app.models import Alert, Case, CaseActivity, CaseAlert, CaseChainSnapshot, CaseNote, Project, User
+from app.routers.chains import build_chain_payload
 from app.templating import templates
 
 router = APIRouter(tags=["Cases"])
@@ -52,6 +54,17 @@ def _serialize_case(db: Session, case: Case) -> dict:
     }
 
 
+def _log_activity(db: Session, case_id: int, actor: Optional[str], action: str, detail: Optional[str]) -> None:
+    db.add(
+        CaseActivity(
+            case_id=case_id,
+            actor=actor,
+            action=action,
+            detail=detail,
+        )
+    )
+
+
 @router.get("/cases", include_in_schema=False)
 def cases_page(request: Request, user: User = Depends(require_user)):
     return templates.TemplateResponse("cases.html", {"request": request, "user": user})
@@ -88,6 +101,8 @@ def create_case(
         owner=(payload.get("owner") or user.email),
     )
     db.add(case)
+    db.flush()
+    _log_activity(db, case.id, user.email, "case_created", f"title={title}")
     db.commit()
     db.refresh(case)
     return _serialize_case(db, case)
@@ -138,6 +153,22 @@ def get_case(
         .all()
     )
 
+    activities = (
+        db.query(CaseActivity)
+        .filter(CaseActivity.case_id == case.id)
+        .order_by(CaseActivity.created_at.desc())
+        .limit(80)
+        .all()
+    )
+
+    chain_snapshots = (
+        db.query(CaseChainSnapshot)
+        .filter(CaseChainSnapshot.case_id == case.id)
+        .order_by(CaseChainSnapshot.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
     return {
         **_serialize_case(db, case),
         "linked_alerts": [
@@ -162,6 +193,30 @@ def get_case(
                 "created_at": note.created_at,
             }
             for note in notes
+        ],
+        "activities": [
+            {
+                "id": item.id,
+                "actor": item.actor,
+                "action": item.action,
+                "detail": item.detail,
+                "created_at": item.created_at,
+            }
+            for item in activities
+        ],
+        "chain_snapshots": [
+            {
+                "id": snap.id,
+                "chain_id": snap.chain_id,
+                "entity_type": snap.entity_type,
+                "entity_value": snap.entity_value,
+                "score": snap.score,
+                "confidence": snap.confidence,
+                "summary": snap.summary,
+                "payload": json.loads(snap.payload),
+                "created_at": snap.created_at,
+            }
+            for snap in chain_snapshots
         ],
     }
 
@@ -191,6 +246,7 @@ def link_alert_to_case(
 
     db.add(CaseAlert(case_id=case.id, alert_id=alert.id))
     case.updated_at = datetime.utcnow()
+    _log_activity(db, case.id, user.email, "alert_linked", f"alert_id={alert.id}")
     db.commit()
     return {"detail": "Alert linked", "case_id": case.id, "alert_id": alert.id}
 
@@ -209,6 +265,7 @@ def update_case_status(
 
     case.status = status
     case.updated_at = datetime.utcnow()
+    _log_activity(db, case.id, user.email, "status_changed", f"status={status}")
     db.commit()
     db.refresh(case)
     return _serialize_case(db, case)
@@ -233,6 +290,7 @@ def add_case_note(
     )
     db.add(note)
     case.updated_at = datetime.utcnow()
+    _log_activity(db, case.id, user.email, "note_added", f"note_id=pending")
     db.commit()
     db.refresh(note)
     return {
@@ -241,4 +299,53 @@ def add_case_note(
         "author": note.author,
         "note": note.note,
         "created_at": note.created_at,
+    }
+
+
+@router.post("/api/cases/{case_id}/chains/save", tags=["Cases"])
+def save_chain_to_case(
+    case_id: int,
+    payload: dict = Body(...),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    case = _get_case(db, user, case_id)
+
+    chain = payload.get("chain")
+    if not isinstance(chain, dict):
+        chain = build_chain_payload(
+            db=db,
+            user=user,
+            ip=payload.get("ip"),
+            user_name=payload.get("user"),
+            host=payload.get("host"),
+            alert_id=payload.get("alert_id"),
+            hours=int(payload.get("hours") or 24),
+            project_id=payload.get("project_id") or case.project_id,
+        )
+
+    entity = chain.get("entity") or {}
+    snapshot = CaseChainSnapshot(
+        case_id=case.id,
+        chain_id=str(chain.get("chain_id") or f"case:{case.id}:chain"),
+        entity_type=str(entity.get("type") or "unknown"),
+        entity_value=str(entity.get("value") or "unknown"),
+        score=int(chain.get("score") or 0),
+        confidence=str(chain.get("confidence") or "Low"),
+        summary=str(chain.get("summary") or ""),
+        payload=json.dumps(chain),
+    )
+    db.add(snapshot)
+    case.updated_at = datetime.utcnow()
+    _log_activity(db, case.id, user.email, "chain_snapshot_saved", f"chain_id={snapshot.chain_id}")
+    db.commit()
+    db.refresh(snapshot)
+
+    return {
+        "id": snapshot.id,
+        "case_id": case.id,
+        "chain_id": snapshot.chain_id,
+        "score": snapshot.score,
+        "confidence": snapshot.confidence,
+        "created_at": snapshot.created_at,
     }
