@@ -18,7 +18,7 @@
 <!-- ═══════════════════════════════════════════════════════════
      Events Investigation  —  Wireshark-style 3-pane interface
      ═══════════════════════════════════════════════════════════ -->
-<div id="ls-events-page">
+<div id="ls-events-page" data-on-vercel="{{ '1' if on_vercel else '0' }}">
 
     <!-- ── Filter Bar (FilterBar.js mounts here) ───────────────────────── -->
     <div id="ls-filterbar"></div>
@@ -53,6 +53,10 @@
             <button onclick="window.lsApp?.reload?.()"
                     class="ls-action-btn" style="margin-right:28px" title="Reload all data">
                 <i class="bi bi-arrow-clockwise"></i> Reload
+            </button>
+            <button onclick="window.lsApp?.loadMore?.()"
+                    class="ls-action-btn" style="margin-right:12px" title="Load more events">
+                <i class="bi bi-list-ul"></i> Load More
             </button>
         </div>
         <canvas id="timelineCanvas" height="70"></canvas>

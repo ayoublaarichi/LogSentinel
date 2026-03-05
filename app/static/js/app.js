@@ -25,14 +25,13 @@ function activeProjectId() {
 
 function applyProjectToNavLinks() {
     const projectId = activeProjectId();
-    if (!projectId) return;
-
     const navPaths = ['/', '/upload', '/events', '/alerts', '/search', '/agents'];
     document.querySelectorAll('.navbar .nav-link[href]').forEach(link => {
         try {
             const url = new URL(link.getAttribute('href'), window.location.origin);
             if (!navPaths.includes(url.pathname)) return;
-            url.searchParams.set('project_id', projectId);
+            if (projectId) url.searchParams.set('project_id', projectId);
+            else url.searchParams.delete('project_id');
             link.setAttribute('href', url.pathname + url.search);
         } catch (_) {
         }

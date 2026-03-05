@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Literal
 
+logger = logging.getLogger("logsentinel.config")
+
 # ── Logging (configure early) ────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -35,12 +37,14 @@ _IS_PRODUCTION: bool = _ON_VERCEL or _ENV == "production"
 UPLOAD_DIR: Path = _DATA_DIR / "uploads"
 
 # ── Database ─────────────────────────────────────────────────────────────────
-_db_env = (
-    os.environ.get("DATABASE_URL", "").strip()
-    or os.environ.get("POSTGRES_URL_NON_POOLING", "").strip()
-    or os.environ.get("POSTGRES_URL", "").strip()
-    or os.environ.get("POSTGRES_PRISMA_URL", "").strip()
-)
+_db_source = None
+_db_env = ""
+for _name in ("DATABASE_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL", "POSTGRES_PRISMA_URL"):
+    _candidate = os.environ.get(_name, "").strip()
+    if _candidate:
+        _db_source = _name
+        _db_env = _candidate
+        break
 if _IS_PRODUCTION:
     if not _db_env:
         raise RuntimeError(
@@ -59,6 +63,14 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
+_db_backend = "sqlite" if DATABASE_URL.startswith("sqlite") else "postgres"
+logger.info(
+    "Database config selected source=%s backend=%s on_vercel=%s",
+    _db_source or "sqlite-default",
+    _db_backend,
+    _ON_VERCEL,
+)
 
 # ── Application ──────────────────────────────────────────────────────────────
 APP_TITLE: str = "LogSentinel"

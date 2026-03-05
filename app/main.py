@@ -7,7 +7,7 @@ FastAPI application entry point.
 import logging
 import socket
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct, func, text
 from sqlalchemy.orm import Session
 
 from app.config import (
@@ -111,9 +111,18 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 # ── Health & session probes (no auth) ────────────────────────────────────────
 @app.get("/api/health", tags=["Utility"])
-def health_check() -> dict:
-    """Unprivileged health probe."""
-    return {"status": "ok"}
+def health_check(db: Session = Depends(get_db)):
+    """Unprivileged health probe with DB check."""
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "ok": True, "db": True, "time": now}
+    except Exception as exc:
+        logger.exception("Health probe DB check failed")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "ok": False, "db": False, "time": now, "detail": str(exc)},
+        )
 
 
 @app.get("/api/session-check", tags=["Utility"])
@@ -245,7 +254,10 @@ def upload_page(request: Request, user: User = Depends(require_user)):
 
 @app.get("/events", response_class=HTMLResponse, include_in_schema=False)
 def events_page(request: Request, user: User = Depends(require_user)):
-    return templates.TemplateResponse("events.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        "events.html",
+        {"request": request, "user": user, "on_vercel": _ON_VERCEL},
+    )
 
 
 @app.get("/alerts", response_class=HTMLResponse, include_in_schema=False)

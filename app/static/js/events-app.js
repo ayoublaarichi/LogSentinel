@@ -33,6 +33,9 @@ const state = {
     threatIntel:    new Map(),
     projects:       [],
     activeProjectId: localStorage.getItem('ls_active_project_id') || '',
+    bulkLimit: 1500,
+    pollIntervalMs: 12000,
+    realtimePollInFlight: false,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -40,6 +43,8 @@ const state = {
    ═══════════════════════════════════════════════════════════════════════════ */
 let filterBar, eventTable, eventDetails, rawViewer, timeline;
 let ws = null;
+let wsRetryTimer = null;
+let pollTimer = null;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Boot
@@ -47,10 +52,11 @@ let ws = null;
 document.addEventListener('DOMContentLoaded', async () => {
     initComponents();
     bindActions();
-    initRealtime();
+    initializeActiveProjectFromUrl();
     await loadProjects();
     await loadData();
     timeline.load(24, projectQuery());
+    initRealtime();
 
     // ── Pre-apply filters from the URL query string ─────────────────────
     // Supports:  /events?ip=185.220.101.23&type=ssh_failed&user=root
@@ -107,6 +113,7 @@ function bindActions() {
             state.activeProjectId = event.target.value || '';
             if (state.activeProjectId) localStorage.setItem('ls_active_project_id', state.activeProjectId);
             else localStorage.removeItem('ls_active_project_id');
+            syncProjectInUrl(state.activeProjectId);
             await loadData();
             timeline.load(24, projectQuery());
             renderProjectSelect();
@@ -123,6 +130,7 @@ async function loadProjects() {
     if (state.activeProjectId && !state.projects.some(p => String(p.id) === String(state.activeProjectId))) {
         state.activeProjectId = '';
         localStorage.removeItem('ls_active_project_id');
+        syncProjectInUrl('');
     }
     renderProjectSelect();
 }
@@ -162,6 +170,7 @@ async function createProject() {
         const project = await resp.json();
         state.activeProjectId = String(project.id);
         localStorage.setItem('ls_active_project_id', state.activeProjectId);
+        syncProjectInUrl(state.activeProjectId);
         await loadProjects();
         await loadData();
         timeline.load(24, projectQuery());
@@ -197,6 +206,7 @@ async function deleteSelectedProject() {
 
         state.activeProjectId = '';
         localStorage.removeItem('ls_active_project_id');
+        syncProjectInUrl('');
         await loadProjects();
         await loadData();
         timeline.load(24, projectQuery());
@@ -213,12 +223,31 @@ async function loadData() {
     setLoading(true);
     try {
         const query = projectQuery();
-        const [events, ips, types, users] = await Promise.all([
-            apiFetch(`/api/events/bulk?limit=5000${query ? `&${query}` : ''}`),
+        const results = await Promise.allSettled([
+            apiFetch(`/api/events/bulk?limit=${state.bulkLimit}${query ? `&${query}` : ''}`),
             apiFetch(`/api/events/ips${query ? `?${query}` : ''}`),
             apiFetch(`/api/events/types${query ? `?${query}` : ''}`),
             apiFetch(`/api/events/users${query ? `?${query}` : ''}`),
         ]);
+
+        const [eventsRes, ipsRes, typesRes, usersRes] = results;
+        if (eventsRes.status !== 'fulfilled') {
+            throw eventsRes.reason;
+        }
+
+        const events = Array.isArray(eventsRes.value) ? eventsRes.value : [];
+        const ips = ipsRes.status === 'fulfilled' && Array.isArray(ipsRes.value) ? ipsRes.value : [];
+        const types = typesRes.status === 'fulfilled' && Array.isArray(typesRes.value) ? typesRes.value : [];
+        const users = usersRes.status === 'fulfilled' && Array.isArray(usersRes.value) ? usersRes.value : [];
+
+        const failedHints = [
+            ipsRes.status !== 'fulfilled' ? 'ips' : null,
+            typesRes.status !== 'fulfilled' ? 'types' : null,
+            usersRes.status !== 'fulfilled' ? 'users' : null,
+        ].filter(Boolean);
+        if (failedHints.length) {
+            toast(`Loaded events with partial metadata (${failedHints.join(', ')})`, 'info');
+        }
 
         // Enrich events with computed severity + matched rule
         state.allEvents = events.map(enrichEvent);
@@ -362,6 +391,11 @@ async function enrichThreatIntel(ev) {
 }
 
 function initRealtime() {
+    if (isVercelRuntime()) {
+        startPollingRealtime('vercel');
+        return;
+    }
+
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const wsUrl = `${proto}://${window.location.host}/ws/events`;
     ws = new WebSocket(wsUrl);
@@ -370,7 +404,7 @@ function initRealtime() {
         try {
             const incoming = JSON.parse(event.data);
             if (!Array.isArray(incoming) || !incoming.length) return;
-            const enriched = incoming.map(enrichEvent);
+            const enriched = incoming.map(enrichEvent).filter(matchesActiveProject);
             const existingIds = new Set(state.allEvents.map(e => e.id));
             const fresh = enriched.filter(e => !existingIds.has(e.id));
             if (!fresh.length) return;
@@ -384,8 +418,57 @@ function initRealtime() {
     };
 
     ws.onclose = () => {
-        setTimeout(initRealtime, 3000);
+        if (wsRetryTimer) clearTimeout(wsRetryTimer);
+        wsRetryTimer = setTimeout(() => {
+            startPollingRealtime('fallback');
+        }, 3000);
     };
+
+    ws.onerror = () => {
+        ws?.close();
+    };
+}
+
+function startPollingRealtime(mode = 'fallback') {
+    if (pollTimer) return;
+    if (mode === 'vercel') {
+        toast('Realtime disabled on Vercel; using polling', 'info');
+    } else {
+        toast('Realtime websocket unavailable; switched to polling', 'info');
+    }
+    pollTimer = setInterval(() => {
+        void pollRealtimeUpdates();
+    }, state.pollIntervalMs);
+}
+
+async function pollRealtimeUpdates() {
+    if (state.loading || state.realtimePollInFlight) return;
+    state.realtimePollInFlight = true;
+    try {
+        const query = projectQuery();
+        const latest = await apiFetch(`/api/events/bulk?limit=250${query ? `&${query}` : ''}`);
+        if (!Array.isArray(latest) || !latest.length) {
+            timeline.load(24, projectQuery());
+            return;
+        }
+
+        const existingIds = new Set(state.allEvents.map(e => e.id));
+        const fresh = latest
+            .map(enrichEvent)
+            .filter(matchesActiveProject)
+            .filter(ev => !existingIds.has(ev.id));
+
+        if (fresh.length) {
+            state.allEvents = [...fresh, ...state.allEvents].slice(0, state.bulkLimit);
+            applyFilters();
+            toast(`Live update: ${fresh.length} new event${fresh.length > 1 ? 's' : ''}`, 'info');
+        }
+        timeline.load(24, projectQuery());
+    } catch (err) {
+        console.warn('[events-app] polling update failed', err);
+    } finally {
+        state.realtimePollInFlight = false;
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -505,6 +588,40 @@ function projectQuery() {
     return `project_id=${encodeURIComponent(state.activeProjectId)}`;
 }
 
+function initializeActiveProjectFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const urlProjectId = params.get('project_id');
+    if (urlProjectId) {
+        state.activeProjectId = urlProjectId;
+        localStorage.setItem('ls_active_project_id', urlProjectId);
+    }
+}
+
+function syncProjectInUrl(projectId) {
+    const url = new URL(window.location.href);
+    if (projectId) url.searchParams.set('project_id', projectId);
+    else url.searchParams.delete('project_id');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+}
+
+function isVercelRuntime() {
+    const page = document.getElementById('ls-events-page');
+    if (page?.dataset?.onVercel === '1') return true;
+    return window.location.host.endsWith('vercel.app');
+}
+
+function matchesActiveProject(ev) {
+    if (!state.activeProjectId) return true;
+    return String(ev.project_id ?? '') === String(state.activeProjectId);
+}
+
+async function loadMoreEvents() {
+    state.bulkLimit = Math.min(10000, state.bulkLimit + 1000);
+    await loadData();
+    timeline.load(24, projectQuery());
+    toast(`Load limit increased to ${state.bulkLimit.toLocaleString()} events`, 'info');
+}
+
 async function safeErrorMessage(resp, fallback) {
     try {
         const body = await resp.json();
@@ -573,4 +690,4 @@ function esc(s) {
 }
 
 /* Export for potential toolbar button access from inline HTML handlers */
-window.lsApp = { filterBar: () => filterBar, reload: loadData };
+window.lsApp = { filterBar: () => filterBar, reload: loadData, loadMore: loadMoreEvents };

@@ -6,19 +6,41 @@ import logging
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.pool import NullPool
 
-from app.config import DATABASE_URL
+from app.config import DATABASE_URL, _ON_VERCEL
 
 logger = logging.getLogger("logsentinel.db")
 
 _IS_SQLITE = DATABASE_URL.startswith("sqlite")
+_IS_POSTGRES = DATABASE_URL.startswith("postgresql+psycopg://")
+_URL_LOWER = DATABASE_URL.lower()
+_USING_EXTERNAL_POOLER = any(
+    hint in _URL_LOWER for hint in ("pooler.", "-pooler", "pgbouncer", "connection_limit=")
+)
+_USE_NULLPOOL = _IS_POSTGRES and (_ON_VERCEL or _USING_EXTERNAL_POOLER)
 
 # ── Engine & session ─────────────────────────────────────────────────────────
+_engine_kwargs = {
+    "pool_pre_ping": True,
+    "echo": False,
+}
+
+if _IS_SQLITE:
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+elif _IS_POSTGRES:
+    _engine_kwargs["connect_args"] = {
+        "connect_timeout": 10,
+        "options": "-c statement_timeout=15000",
+    }
+
+if _USE_NULLPOOL:
+    _engine_kwargs["poolclass"] = NullPool
+    logger.info("Using NullPool for serverless/pooled Postgres connections")
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if _IS_SQLITE else {},
-    pool_pre_ping=True,
-    echo=False,
+    **_engine_kwargs,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
