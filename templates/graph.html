@@ -20,6 +20,7 @@
     <button id="btnGraphRefresh" class="btn btn-sm" style="background:rgba(77,158,255,0.12);color:var(--ls-accent);border:1px solid rgba(77,158,255,0.3)">
         <i class="bi bi-arrow-clockwise me-1"></i>Refresh
     </button>
+    <span id="graphLastUpdate" class="small text-muted">Last updated: —</span>
     <span id="graphMeta" class="small text-muted ms-auto">Loading graph…</span>
 </div>
 
@@ -53,6 +54,14 @@
 {% block scripts %}
 <script>
 let graphNetwork = null;
+let graphNodes = null;
+let graphEdges = null;
+let selectedNodeId = null;
+let graphDragging = false;
+let graphPauseUntil = 0;
+
+const GRAPH_POLL_MS = 10_000;
+const GRAPH_IDLE_RESUME_MS = 10_000;
 
 function activeProjectId() {
     return localStorage.getItem('ls_active_project_id') || '';
@@ -144,68 +153,145 @@ function colorForNode(node) {
     return '#8b949e';
 }
 
-async function loadGraph() {
-    const meta = document.getElementById('graphMeta');
-    meta.textContent = 'Loading graph…';
-
-    const resp = await fetch(`/api/graph?${graphQuery()}`, { credentials: 'same-origin' });
-    if (resp.status === 401) {
-        window.location.href = '/login?next=' + encodeURIComponent(location.pathname);
-        return;
-    }
-    if (!resp.ok) {
-        meta.textContent = `Failed to load graph (${resp.status})`;
-        return;
-    }
-
-    const body = await resp.json();
-    const nodes = (body.nodes || []).map(n => ({
-        ...n,
+function decorateNode(node) {
+    const color = colorForNode(node);
+    return {
+        ...node,
         color: {
-            border: colorForNode(n),
-            background: colorForNode(n) + '22',
-            highlight: { border: colorForNode(n), background: colorForNode(n) + '33' },
+            border: color,
+            background: color + '22',
+            highlight: { border: color, background: color + '33' },
         },
         font: { color: '#c9d1d9', size: 12 },
-    }));
-    const edges = (body.edges || []).map(e => ({
-        ...e,
+    };
+}
+
+function decorateEdge(edge) {
+    return {
+        ...edge,
         color: { color: 'rgba(139,148,158,0.45)' },
         font: { color: '#8b949e', size: 10 },
         smooth: { type: 'dynamic' },
-    }));
+    };
+}
 
-    const dsNodes = new vis.DataSet(nodes);
-    const dsEdges = new vis.DataSet(edges);
-    const container = document.getElementById('graphCanvas');
+function updateLastUpdated() {
+    const el = document.getElementById('graphLastUpdate');
+    if (!el) return;
+    el.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+}
 
-    if (graphNetwork) {
-        graphNetwork.destroy();
-    }
+function initGraphNetwork() {
+    if (graphNetwork) return;
+    graphNodes = new vis.DataSet([]);
+    graphEdges = new vis.DataSet([]);
 
-    graphNetwork = new vis.Network(container, { nodes: dsNodes, edges: dsEdges }, {
-        autoResize: true,
-        interaction: { hover: true, multiselect: false },
-        physics: {
-            stabilization: false,
-            barnesHut: { gravitationalConstant: -9000, springLength: 130, springConstant: 0.02 },
-        },
-    });
+    graphNetwork = new vis.Network(
+        document.getElementById('graphCanvas'),
+        { nodes: graphNodes, edges: graphEdges },
+        {
+            autoResize: true,
+            interaction: { hover: true, multiselect: false },
+            physics: {
+                stabilization: false,
+                barnesHut: { gravitationalConstant: -9000, springLength: 130, springConstant: 0.02 },
+            },
+        }
+    );
 
     graphNetwork.on('click', (params) => {
         if (!params.nodes || !params.nodes.length) {
+            selectedNodeId = null;
             renderNodeDetails(null);
             return;
         }
-        renderNodeDetails(dsNodes.get(params.nodes[0]));
+        selectedNodeId = params.nodes[0];
+        renderNodeDetails(graphNodes.get(selectedNodeId));
     });
 
-    const m = body.meta || {};
-    meta.textContent = `${nodes.length} nodes · ${edges.length} edges · ${m.event_rows || 0} events · ${m.alert_rows || 0} alerts`;
+    graphNetwork.on('dragStart', () => {
+        graphDragging = true;
+    });
+    graphNetwork.on('dragEnd', () => {
+        graphDragging = false;
+        graphPauseUntil = Date.now() + GRAPH_IDLE_RESUME_MS;
+    });
 }
 
-document.getElementById('btnGraphRefresh').addEventListener('click', loadGraph);
-document.getElementById('graphHours').addEventListener('change', loadGraph);
-loadGraph();
+function upsertDataset(dataset, incoming, decorate) {
+    const incomingMap = new Map(incoming.map(item => [item.id, decorate(item)]));
+    const existingIds = new Set(dataset.getIds());
+
+    const toUpsert = [];
+    for (const [id, item] of incomingMap.entries()) {
+        toUpsert.push(item);
+        existingIds.delete(id);
+    }
+    if (toUpsert.length) dataset.update(toUpsert);
+
+    const staleIds = Array.from(existingIds);
+    if (staleIds.length) dataset.remove(staleIds);
+}
+
+function applyGraphData(body) {
+    initGraphNetwork();
+
+    const incomingNodes = Array.isArray(body.nodes) ? body.nodes : [];
+    const incomingEdges = Array.isArray(body.edges) ? body.edges : [];
+
+    upsertDataset(graphNodes, incomingNodes, decorateNode);
+    upsertDataset(graphEdges, incomingEdges, decorateEdge);
+
+    if (selectedNodeId) {
+        const selected = graphNodes.get(selectedNodeId);
+        if (selected) renderNodeDetails(selected);
+        else {
+            selectedNodeId = null;
+            renderNodeDetails(null);
+        }
+    }
+
+    const m = body.meta || {};
+    const limits = m.limits || {};
+    document.getElementById('graphMeta').textContent =
+        `${incomingNodes.length} nodes · ${incomingEdges.length} edges · ${m.event_rows || 0} events · ${m.alert_rows || 0} alerts` +
+        ` · cap ${limits.max_nodes || '—'}/${limits.max_edges || '—'}`;
+
+    updateLastUpdated();
+}
+
+async function refreshGraph(force = false) {
+    if (!force) {
+        if (document.hidden) return;
+        if (graphDragging) return;
+        if (Date.now() < graphPauseUntil) return;
+    }
+
+    const meta = document.getElementById('graphMeta');
+    meta.textContent = 'Loading graph…';
+
+    try {
+        const resp = await fetch(`/api/graph?${graphQuery()}`, { credentials: 'same-origin' });
+        if (resp.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(location.pathname);
+            return;
+        }
+        if (!resp.ok) {
+            meta.textContent = `Failed to load graph (${resp.status})`;
+            return;
+        }
+
+        const body = await resp.json();
+        applyGraphData(body);
+    } catch (err) {
+        console.error('Graph refresh failed', err);
+        meta.textContent = 'Graph refresh failed';
+    }
+}
+
+document.getElementById('btnGraphRefresh').addEventListener('click', () => refreshGraph(true));
+document.getElementById('graphHours').addEventListener('change', () => refreshGraph(true));
+setInterval(() => refreshGraph(false), GRAPH_POLL_MS);
+refreshGraph(true);
 </script>
 {% endblock %}
