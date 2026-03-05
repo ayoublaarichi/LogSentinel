@@ -262,6 +262,15 @@ class TestEvents:
         body = r.json()
         assert body["seeded"] == 3
 
+    def test_delete_seed_events_endpoint(self, client):
+        seed_r = client.post("/api/events/seed?count=4")
+        assert seed_r.status_code == 200
+
+        delete_r = client.delete("/api/events/seed")
+        assert delete_r.status_code == 200
+        body = delete_r.json()
+        assert body.get("deleted", 0) >= 4
+
 
 # ---------------------------------------------------------------------------
 #  5. CORS & OPTIONS preflight

@@ -106,6 +106,10 @@ function bindActions() {
     if (seedBtn) {
         seedBtn.addEventListener('click', seedDemoEvents);
     }
+    const seedDeleteBtn = document.getElementById('ls-seed-delete');
+    if (seedDeleteBtn) {
+        seedDeleteBtn.addEventListener('click', deleteSeedDemoEvents);
+    }
 
     const projectSelect = document.getElementById('ls-project-select');
     if (projectSelect) {
@@ -665,6 +669,47 @@ async function seedDemoEvents() {
     } finally {
         if (btn) {
             btn.innerHTML = originalLabel || '<i class="bi bi-stars"></i> Seed Demo Events';
+            btn.disabled = false;
+        }
+    }
+}
+
+async function deleteSeedDemoEvents() {
+    const btn = document.getElementById('ls-seed-delete');
+    if (!window.confirm('Delete seed-generated demo events for this scope?')) return;
+
+    let originalLabel = '';
+    if (btn) {
+        originalLabel = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Deleting...';
+    }
+
+    try {
+        const query = projectQuery();
+        const url = `/api/events/seed${query ? `?${query}` : ''}`;
+        const r = await fetch(url, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+        });
+        if (r.status === 401) {
+            const next = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = `/login?next=${next}`;
+            throw new Error('Unauthorized');
+        }
+        if (!r.ok) {
+            throw new Error(`Delete seed failed: ${r.status} ${r.statusText}`);
+        }
+        const data = await r.json();
+        toast(`Deleted ${data.deleted ?? 0} seed events`, 'success');
+        await loadData();
+        timeline.load(24, projectQuery());
+    } catch (err) {
+        toast(`Failed to delete seed events: ${err.message}`, 'error');
+        console.error('[events-app] delete seed failed', err);
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalLabel || '<i class="bi bi-trash3"></i> Delete Seed Events';
             btn.disabled = false;
         }
     }

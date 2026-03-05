@@ -311,6 +311,29 @@ def seed_events(
     return {"seeded": len(rows), "user_id": user.id, "project_id": project.id, "source_ip": client_ip}
 
 
+@router.delete("/seed")
+def delete_seed_events(
+    project_id: Optional[int] = Query(None, ge=1),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Delete only seed-generated demo events for current user.
+
+    Scope can be narrowed by project_id.
+    """
+    project_filter = _resolve_project_filter(db, user, project_id)
+    q = db.query(LogEvent).filter(
+        LogEvent.user_id == user.id,
+        LogEvent.file_name == "seed-generated.log",
+        LogEvent.raw_line.like("seed-event-%"),
+    )
+    if project_filter is not None:
+        q = q.filter(LogEvent.project_id == project_filter)
+    deleted = q.delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": int(deleted), "project_id": project_filter}
+
+
 @router.delete("/bulk")
 def bulk_delete(
     source_ip: Optional[str] = Query(None),
