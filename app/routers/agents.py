@@ -64,7 +64,7 @@ def create_agent(
         "import requests, socket\n\n"
         f"requests.post(\n"
         f"    \"{base_url}/api/ingest/\",\n"
-        f"    headers={{\"Authorization\": \"Bearer {raw_key}\"}},\n"
+        f"    headers={{\"X-API-Key\": \"{raw_key}\"}},\n"
         "    json={\n"
         "        \"log_type\": \"auth\",\n"
         "        \"filename\": \"agent.log\",\n"
@@ -115,7 +115,7 @@ line = f"Jan 10 12:34:56 {{hostname}} sshd[1234]: Failed password for root from 
 
 requests.post(
     api_url,
-    headers={{"Authorization": f"Bearer {{api_key}}"}},
+    headers={{"X-API-Key": api_key}},
     json={"log_type": "auth", "filename": "agent.log", "content": line},
     timeout=10,
 )

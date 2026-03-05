@@ -398,12 +398,52 @@ class TestProjects:
         }
         ingest = client.post(
             "/api/ingest/",
-            headers={"Authorization": f"Bearer {raw_key}"},
+            headers={"X-API-Key": raw_key},
             json=payload,
         )
         assert ingest.status_code == 200
         body = ingest.json()
         assert body["project_id"] == pid
+
+    def test_bulk_ingest_with_api_key(self, client):
+        create_proj = client.post("/api/projects/", json={"name": f"bulk-proj-{uuid.uuid4().hex[:6]}"})
+        assert create_proj.status_code == 200
+        pid = create_proj.json()["id"]
+
+        key_page = client.post(
+            "/settings/api-keys/create",
+            data={"label": "bulk-ingest", "project_id": str(pid)},
+        )
+        assert key_page.status_code == 200
+        key_match = re.search(r">([0-9a-f]{40})</code>", key_page.text)
+        assert key_match
+        raw_key = key_match.group(1)
+
+        bulk = client.post(
+            "/api/ingest/bulk",
+            headers={"X-API-Key": raw_key},
+            json={
+                "events": [
+                    {
+                        "level": "warning",
+                        "message": "login failed for root",
+                        "source": "ssh",
+                        "ip": "10.0.0.120",
+                        "user": "root",
+                    },
+                    {
+                        "level": "info",
+                        "message": "normal request",
+                        "source": "nginx",
+                        "ip": "10.0.0.121",
+                    },
+                ]
+            },
+        )
+        assert bulk.status_code == 200
+        b = bulk.json()
+        assert b["events_parsed"] == 2
+        assert b["project_id"] == pid
 
     def test_search_and_investigate_respect_project_scope(self, client):
         create_proj = client.post("/api/projects/", json={"name": f"search-proj-{uuid.uuid4().hex[:6]}"})

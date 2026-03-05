@@ -302,3 +302,18 @@ class CaseActivity(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+
+class AgentRateLimit(Base):
+    __tablename__ = "agent_rate_limits"
+    __table_args__ = (UniqueConstraint("api_key_id", "window_start", name="uq_agent_rate_limits_key_window"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    api_key_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )

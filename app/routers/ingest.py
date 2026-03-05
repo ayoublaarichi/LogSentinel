@@ -5,14 +5,21 @@ Accepts raw log text, parses it, persists events scoped to the API-key
 owner, and runs detection.
 """
 
+import ipaddress
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import rate_limit_ingest, require_api_key_user
+from app.dependencies_ingest import (
+    enforce_agent_rate_limit,
+    enforce_ingest_payload_limit,
+    require_ingest_api_key,
+)
 from app.detection.engine import run_detection
-from app.models import LogEvent, User
+from app.models import ApiKey, LogEvent, User
 from app.parsers.auth_log import AuthLogParser
 from app.parsers.nginx import NginxAccessParser
 from app.services.auth_service import audit
@@ -27,16 +34,75 @@ _nginx_parser = NginxAccessParser()
 class IngestPayload(BaseModel):
     log_type: str = Field("auto", description="'auth', 'nginx', or 'auto'")
     filename: str = Field("api_ingest.log", max_length=256)
-    content: str = Field(..., min_length=1, max_length=5_000_000,
-                         description="Raw log text (max 5 MB)")
+    content: str = Field(..., min_length=1, max_length=1_000_000,
+                         description="Raw log text (max 1 MB)")
+
+
+class IngestEventIn(BaseModel):
+    timestamp: datetime | None = None
+    level: str = Field("info", min_length=3, max_length=16)
+    message: str = Field(..., min_length=1, max_length=4000)
+    source: str = Field(..., min_length=1, max_length=64)
+    ip: str | None = Field(None, max_length=45)
+    user: str | None = Field(None, max_length=128)
+    meta: dict | None = None
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"info", "warning", "error", "critical"}
+        if normalized not in allowed:
+            raise ValueError("level must be one of info|warning|error|critical")
+        return normalized
+
+    @field_validator("ip")
+    @classmethod
+    def validate_ip(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        try:
+            ipaddress.ip_address(value)
+            return value
+        except ValueError as exc:
+            raise ValueError("invalid ip") from exc
+
+
+class BulkIngestPayload(BaseModel):
+    events: list[IngestEventIn] = Field(..., min_length=1, max_length=500)
+
+
+def _ingest_user_from_request(request: Request, db: Session, api_key: ApiKey) -> User:
+    user = getattr(request.state, "ingest_user", None)
+    if isinstance(user, User):
+        return user
+    owner = db.query(User).filter(User.id == api_key.user_id).first()
+    if owner is None:
+        raise HTTPException(status_code=401, detail="API key owner not found")
+    return owner
+
+
+def _serialize_event(event: IngestEventIn, user_id: int, project_id: int, file_name: str) -> LogEvent:
+    payload_suffix = f" meta={event.meta}" if event.meta else ""
+    return LogEvent(
+        user_id=user_id,
+        project_id=project_id,
+        timestamp=event.timestamp or datetime.utcnow(),
+        source_ip=event.ip,
+        username=event.user,
+        event_type=f"ingest_{event.level}",
+        log_source=event.source,
+        raw_line=f"{event.message}{payload_suffix}",
+        file_name=file_name,
+    )
 
 
 @router.post("/")
 def ingest_logs(
     request: Request,
     payload: IngestPayload,
-    user: User = Depends(require_api_key_user),
-    _rl: None = Depends(rate_limit_ingest),
+    api_key: ApiKey = Depends(require_ingest_api_key),
+    _payload_limit: None = Depends(enforce_ingest_payload_limit),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -44,18 +110,21 @@ def ingest_logs(
 
     ```
     curl -X POST http://localhost:8000/api/ingest/ \\
-      -H "Authorization: Bearer <YOUR_API_KEY>" \\
+            -H "X-API-Key: <YOUR_API_KEY>" \\
       -H "Content-Type: application/json" \\
       -d '{"log_type":"auth","filename":"myserver.log","content":"<raw log text>"}'
     ```
     """
+    user = _ingest_user_from_request(request, db, api_key)
+
     parser = _resolve(payload.log_type, payload.filename)
     parsed = parser.parse_file(payload.content)
     if not parsed:
         raise HTTPException(422, "No valid log lines could be parsed.")
 
-    api_key = getattr(request.state, "api_key", None)
-    project_hint = api_key.project_id if api_key is not None else None
+    enforce_agent_rate_limit(api_key=api_key, db=db, units=len(parsed))
+
+    project_hint = api_key.project_id
     project = get_user_project_or_default(db, user, project_id=project_hint)
 
     db_events = [
@@ -94,6 +163,49 @@ def ingest_logs(
         "alerts_generated": len(new_alerts),
         "project_id": project.id,
         "message": f"Ingested {len(db_events)} events for user {user.email}.",
+    }
+
+
+@router.post("/bulk")
+def ingest_bulk_events(
+    request: Request,
+    payload: BulkIngestPayload,
+    api_key: ApiKey = Depends(require_ingest_api_key),
+    _payload_limit: None = Depends(enforce_ingest_payload_limit),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = _ingest_user_from_request(request, db, api_key)
+    if not payload.events:
+        raise HTTPException(status_code=400, detail="events list cannot be empty")
+    if len(payload.events) > 500:
+        raise HTTPException(status_code=413, detail="max 500 events per batch")
+
+    enforce_agent_rate_limit(api_key=api_key, db=db, units=len(payload.events))
+
+    project = get_user_project_or_default(db, user, project_id=api_key.project_id)
+    db_events = [
+        _serialize_event(event, user_id=user.id, project_id=project.id, file_name="api-bulk.json")
+        for event in payload.events
+    ]
+    db.add_all(db_events)
+    db.commit()
+
+    new_alerts = run_detection(
+        db,
+        file_name="api-bulk.json",
+        user_id=user.id,
+        project_id=project.id,
+    )
+
+    audit(db, user.id, "ingest_bulk", f"{len(db_events)} structured events via API key")
+    from app.websocket.manager import broadcast_events
+    broadcast_events(user.id, db_events)
+
+    return {
+        "events_parsed": len(db_events),
+        "alerts_generated": len(new_alerts),
+        "project_id": project.id,
+        "message": f"Bulk ingested {len(db_events)} events for user {user.email}.",
     }
 
 

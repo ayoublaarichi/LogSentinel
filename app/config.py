@@ -84,6 +84,7 @@ SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"  # prevents CS
 # ── Rate limiting (in-memory, per-process) ───────────────────────────────────
 INGEST_RATE_LIMIT: int = 60          # max requests per window
 INGEST_RATE_WINDOW: int = 60         # window in seconds
+INGEST_RPM: int = int(os.environ.get("INGEST_RPM", str(INGEST_RATE_LIMIT)))
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # On Vercel the frontend and API share the same origin, but custom domains or
