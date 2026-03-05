@@ -15,6 +15,7 @@ Equivalent curl commands are included as comments for manual verification.
 
 import os
 import re
+import time
 import uuid
 
 import pytest
@@ -67,6 +68,27 @@ def _force_logout(client):
             client.cookies.clear()
         except Exception:
             pass
+
+
+def login_with_retry(client, email: str, password: str, retries: int = 3, delay_seconds: float = 1.0):
+    payload = {
+        "email": email,
+        "password": password,
+    }
+    last_error = None
+    for attempt in range(retries):
+        try:
+            response = client.post("/login", data=payload)
+            if response.status_code in (200, 303):
+                return response
+            last_error = RuntimeError(f"Unexpected login status: {response.status_code}")
+        except Exception as exc:
+            last_error = exc
+        if attempt < retries - 1:
+            time.sleep(delay_seconds)
+    if last_error:
+        raise last_error
+    raise RuntimeError("Login failed after retries")
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +219,7 @@ class TestEvents:
     @pytest.fixture(autouse=True)
     def _login(self, client, test_email):
         """Ensure we are logged in for every test in this class."""
-        client.post("/login", data={
-            "email": test_email,
-            "password": TEST_PASSWORD,
-        })
+        login_with_retry(client, test_email, TEST_PASSWORD)
 
     def test_bulk_events(self, client):
         r = client.get("/api/events/bulk?limit=10")
@@ -272,10 +291,7 @@ class TestCORS:
 class TestTrailingSlash:
     @pytest.fixture(autouse=True)
     def _login(self, client, test_email):
-        client.post("/login", data={
-            "email": test_email,
-            "password": TEST_PASSWORD,
-        })
+        login_with_retry(client, test_email, TEST_PASSWORD)
 
     def test_no_307_redirect(self, client):
         """With redirect_slashes=False the app must not 307-redirect API calls."""
@@ -331,10 +347,7 @@ class TestLoginNextRedirect:
 class TestProjects:
     @pytest.fixture(autouse=True)
     def _login(self, client, test_email):
-        client.post("/login", data={
-            "email": test_email,
-            "password": TEST_PASSWORD,
-        })
+        login_with_retry(client, test_email, TEST_PASSWORD)
 
     def test_project_crud_and_scoped_seed(self, client):
         list_r = client.get("/api/projects/")
@@ -438,10 +451,7 @@ class TestProjects:
 class TestSIEMFeatures:
     @pytest.fixture(autouse=True)
     def _login(self, client, test_email):
-        client.post("/login", data={
-            "email": test_email,
-            "password": TEST_PASSWORD,
-        })
+        login_with_retry(client, test_email, TEST_PASSWORD)
 
     def test_geo_stats_endpoint(self, client):
         seed_r = client.post("/api/events/seed?count=5")
