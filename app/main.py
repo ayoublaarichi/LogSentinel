@@ -135,7 +135,7 @@ def options_fallback(path: str) -> Response:
 
 
 # ── Include routers ──────────────────────────────────────────────────────────
-from app.routers import agents, alerts, auth, events, ingest, investigate, projects, search, settings, upload  # noqa: E402
+from app.routers import agents, alerts, auth, events, graph, ingest, investigate, projects, search, settings, upload  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(upload.router)
@@ -147,6 +147,7 @@ app.include_router(settings.router)
 app.include_router(investigate.router)
 app.include_router(search.router)
 app.include_router(agents.router)
+app.include_router(graph.router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -247,6 +248,11 @@ def events_page(request: Request, user: User = Depends(require_user)):
 @app.get("/alerts", response_class=HTMLResponse, include_in_schema=False)
 def alerts_page(request: Request, user: User = Depends(require_user)):
     return templates.TemplateResponse("alerts.html", {"request": request, "user": user})
+
+
+@app.get("/graph", response_class=HTMLResponse, include_in_schema=False)
+def graph_page(request: Request, user: User = Depends(require_user)):
+    return templates.TemplateResponse("graph.html", {"request": request, "user": user})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -521,3 +521,20 @@ class TestSIEMFeatures:
         assert body.get("api_key")
         assert body.get("install_command")
         assert body.get("python_snippet")
+
+    def test_attack_graph_api(self, client):
+        seed_r = client.post("/api/events/seed?count=4")
+        assert seed_r.status_code == 200
+
+        graph_r = client.get("/api/graph?hours=24")
+        assert graph_r.status_code == 200
+        body = graph_r.json()
+        assert "nodes" in body
+        assert "edges" in body
+        assert isinstance(body["nodes"], list)
+        assert isinstance(body["edges"], list)
+
+    def test_graph_page(self, client):
+        page_r = client.get("/graph", headers={"Accept": "text/html"})
+        assert page_r.status_code == 200
+        assert "Attack Graph" in page_r.text

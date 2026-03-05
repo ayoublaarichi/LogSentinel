@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Attack Graph{% endblock %}
+{% block nav_graph %}active{% endblock %}
+
+{% block head %}
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+    <div>
+        <label for="graphHours" class="form-label small mb-1" style="color:var(--ls-text-muted)">Window</label>
+        <select id="graphHours" class="form-select form-select-sm bg-dark text-light border-secondary">
+            <option value="6">Last 6h</option>
+            <option value="24" selected>Last 24h</option>
+            <option value="72">Last 72h</option>
+            <option value="168">Last 7d</option>
+        </select>
+    </div>
+    <button id="btnGraphRefresh" class="btn btn-sm" style="background:rgba(77,158,255,0.12);color:var(--ls-accent);border:1px solid rgba(77,158,255,0.3)">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+    </button>
+    <span id="graphMeta" class="small text-muted ms-auto">Loading graph…</span>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-9">
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-diagram-3"></i>
+                <strong>Attack Graph</strong>
+            </div>
+            <div class="card-body p-0">
+                <div id="graphCanvas" style="height:70vh;min-height:520px"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3">
+        <div class="card bg-dark border-secondary h-100">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle"></i>
+                <strong>Node Details</strong>
+            </div>
+            <div class="card-body" id="graphDetails">
+                <div class="small text-muted">Select a node to view details.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let graphNetwork = null;
+
+function activeProjectId() {
+    return localStorage.getItem('ls_active_project_id') || '';
+}
+
+function graphQuery() {
+    const params = new URLSearchParams();
+    params.set('hours', document.getElementById('graphHours').value || '24');
+    const pid = activeProjectId();
+    if (pid) params.set('project_id', pid);
+    return params.toString();
+}
+
+function investigateLink(ip) {
+    const pid = activeProjectId();
+    const suffix = pid ? `?project_id=${encodeURIComponent(pid)}` : '';
+    return `/investigate/ip/${encodeURIComponent(ip)}${suffix}`;
+}
+
+function escHtml(v) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(v ?? '')));
+    return div.innerHTML;
+}
+
+function renderNodeDetails(node) {
+    const root = document.getElementById('graphDetails');
+    if (!node) {
+        root.innerHTML = '<div class="small text-muted">Select a node to view details.</div>';
+        return;
+    }
+
+    const header = `<div class="mb-2"><strong>${escHtml(node.label || node.id)}</strong></div>`;
+    const base = `
+        <div class="small text-muted mb-1">Type: ${escHtml(node.type || 'unknown')}</div>
+        ${node.event_count ? `<div class="small text-muted mb-2">Events: ${node.event_count}</div>` : ''}
+        ${node.severity ? `<div class="small text-muted mb-2">Top severity: ${escHtml(String(node.severity).toUpperCase())}</div>` : ''}
+    `;
+
+    if (!String(node.id || '').startsWith('ip:')) {
+        root.innerHTML = header + base;
+        return;
+    }
+
+    const ip = String(node.id).slice(3);
+    root.innerHTML = header + base + `
+        <div class="d-grid gap-2 mb-3">
+            <a class="btn btn-sm" href="${investigateLink(ip)}"
+               style="border:1px solid rgba(77,158,255,0.35);color:var(--ls-accent);background:rgba(77,158,255,0.07)">
+                <i class="bi bi-search me-1"></i>Investigate
+            </a>
+        </div>
+        <div id="intelBox" class="small text-muted">Loading threat intel…</div>
+    `;
+
+    fetch(`/api/threat-intel/${encodeURIComponent(ip)}`, { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            const intel = document.getElementById('intelBox');
+            if (!intel) return;
+            if (!data) {
+                intel.innerHTML = '<span class="text-muted">Threat intel unavailable.</span>';
+                return;
+            }
+            intel.innerHTML = `
+                <div class="mb-1"><span class="text-muted">Country:</span> ${escHtml(data.country || 'Unknown')}</div>
+                <div class="mb-1"><span class="text-muted">City:</span> ${escHtml(data.city || '—')}</div>
+                <div class="mb-1"><span class="text-muted">ASN:</span> ${escHtml(data.asn || '—')}</div>
+                <div class="mb-1"><span class="text-muted">ISP:</span> ${escHtml(data.isp || '—')}</div>
+                <div><span class="text-muted">Reputation:</span> ${escHtml(data.reputation_score ?? '—')}</div>
+            `;
+        })
+        .catch(() => {
+            const intel = document.getElementById('intelBox');
+            if (intel) intel.innerHTML = '<span class="text-muted">Threat intel unavailable.</span>';
+        });
+}
+
+function colorForNode(node) {
+    if (node.type === 'ip') {
+        const sev = String(node.severity || '').toLowerCase();
+        if (sev === 'critical') return '#ff2d55';
+        if (sev === 'high') return '#ff7b72';
+        if (sev === 'medium') return '#e8853d';
+        return '#4d9eff';
+    }
+    if (node.type === 'alert_rule') return '#d29922';
+    if (node.type === 'user') return '#bc8cff';
+    return '#8b949e';
+}
+
+async function loadGraph() {
+    const meta = document.getElementById('graphMeta');
+    meta.textContent = 'Loading graph…';
+
+    const resp = await fetch(`/api/graph?${graphQuery()}`, { credentials: 'same-origin' });
+    if (resp.status === 401) {
+        window.location.href = '/login?next=' + encodeURIComponent(location.pathname);
+        return;
+    }
+    if (!resp.ok) {
+        meta.textContent = `Failed to load graph (${resp.status})`;
+        return;
+    }
+
+    const body = await resp.json();
+    const nodes = (body.nodes || []).map(n => ({
+        ...n,
+        color: {
+            border: colorForNode(n),
+            background: colorForNode(n) + '22',
+            highlight: { border: colorForNode(n), background: colorForNode(n) + '33' },
+        },
+        font: { color: '#c9d1d9', size: 12 },
+    }));
+    const edges = (body.edges || []).map(e => ({
+        ...e,
+        color: { color: 'rgba(139,148,158,0.45)' },
+        font: { color: '#8b949e', size: 10 },
+        smooth: { type: 'dynamic' },
+    }));
+
+    const dsNodes = new vis.DataSet(nodes);
+    const dsEdges = new vis.DataSet(edges);
+    const container = document.getElementById('graphCanvas');
+
+    if (graphNetwork) {
+        graphNetwork.destroy();
+    }
+
+    graphNetwork = new vis.Network(container, { nodes: dsNodes, edges: dsEdges }, {
+        autoResize: true,
+        interaction: { hover: true, multiselect: false },
+        physics: {
+            stabilization: false,
+            barnesHut: { gravitationalConstant: -9000, springLength: 130, springConstant: 0.02 },
+        },
+    });
+
+    graphNetwork.on('click', (params) => {
+        if (!params.nodes || !params.nodes.length) {
+            renderNodeDetails(null);
+            return;
+        }
+        renderNodeDetails(dsNodes.get(params.nodes[0]));
+    });
+
+    const m = body.meta || {};
+    meta.textContent = `${nodes.length} nodes · ${edges.length} edges · ${m.event_rows || 0} events · ${m.alert_rows || 0} alerts`;
+}
+
+document.getElementById('btnGraphRefresh').addEventListener('click', loadGraph);
+document.getElementById('graphHours').addEventListener('change', loadGraph);
+loadGraph();
+</script>
+{% endblock %}
