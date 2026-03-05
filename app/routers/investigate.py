@@ -61,6 +61,22 @@ def _build_summary(timeline: list[dict]) -> str:
     return "No high-confidence attack pattern detected from timeline heuristics."
 
 
+def _safe_enrich_ip(db: Session, ip: str) -> dict:
+    try:
+        return enrich_ip(db, ip)
+    except Exception:
+        return {
+            "ip": ip,
+            "country": "Unknown",
+            "city": "—",
+            "asn": "—",
+            "isp": "—",
+            "reputation_score": None,
+            "is_tor": False,
+            "source": "error",
+        }
+
+
 @router.get("/investigate/ip/{ip}", include_in_schema=False)
 def investigate_ip_page(
     ip: str,
@@ -107,7 +123,7 @@ def investigate_ip_page(
     targeted_users = sorted([u[0] for u in usernames if u[0] and u[0] != "unknown"])
 
     # Threat intel
-    intel = enrich_ip(db, ip)
+    intel = _safe_enrich_ip(db, ip)
 
     timeline_data = [
         {
@@ -145,7 +161,7 @@ def get_threat_intel(
     db: Session = Depends(get_db),
 ) -> dict:
     """Return threat intelligence data for an IP."""
-    return enrich_ip(db, ip)
+    return _safe_enrich_ip(db, ip)
 
 
 @router.get("/api/investigate/timeline", tags=["Investigate"])

@@ -192,7 +192,10 @@ def event_geo_stats(
 
     counts: dict[str, int] = {}
     for source_ip, count in rows:
-        intel = enrich_ip(db, source_ip)
+        try:
+            intel = enrich_ip(db, source_ip)
+        except Exception:
+            intel = {"country": "Unknown"}
         code = _country_code(str(intel.get("country") or "Unknown"))
         counts[code] = counts.get(code, 0) + int(count)
     return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
