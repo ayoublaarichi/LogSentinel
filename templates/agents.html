@@ -41,6 +41,9 @@
             <div class="card-header d-flex align-items-center gap-2">
                 <i class="bi bi-terminal text-info"></i>
                 <strong>Installer Output</strong>
+                <button id="agentRotateBtn" class="btn btn-outline-warning btn-sm ms-auto" type="button">
+                    <i class="bi bi-arrow-repeat me-1"></i>Rotate Key
+                </button>
             </div>
             <div class="card-body">
                 <div class="mb-3">
@@ -63,6 +66,16 @@
 
 {% block scripts %}
 <script>
+let currentAgentKeyId = null;
+
+function applyAgentOutput(data) {
+    currentAgentKeyId = data.key_id || null;
+    document.getElementById('agentApiKey').textContent = data.api_key;
+    document.getElementById('agentInstallCommand').textContent = data.install_command;
+    document.getElementById('agentPythonSnippet').textContent = data.python_snippet;
+    document.getElementById('agentOutput').classList.remove('d-none');
+}
+
 document.getElementById('agentCreateForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const btn = document.getElementById('agentCreateBtn');
@@ -88,13 +101,38 @@ document.getElementById('agentCreateForm').addEventListener('submit', async (eve
         if (!resp.ok) {
             throw new Error(data.detail || 'Failed to create agent');
         }
-
-        document.getElementById('agentApiKey').textContent = data.api_key;
-        document.getElementById('agentInstallCommand').textContent = data.install_command;
-        document.getElementById('agentPythonSnippet').textContent = data.python_snippet;
-        document.getElementById('agentOutput').classList.remove('d-none');
+        applyAgentOutput(data);
     } catch (err) {
         alert(err.message || 'Failed to create agent');
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('agentRotateBtn').addEventListener('click', async () => {
+    if (!currentAgentKeyId) {
+        alert('Create an agent first to rotate its key.');
+        return;
+    }
+
+    const btn = document.getElementById('agentRotateBtn');
+    btn.disabled = true;
+    try {
+        const resp = await fetch(`/api/agents/keys/${currentAgentKeyId}/rotate`, {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        if (resp.status === 401) {
+            window.location.href = '/login?next=' + encodeURIComponent(location.pathname);
+            return;
+        }
+        const data = await resp.json();
+        if (!resp.ok) {
+            throw new Error(data.detail || 'Failed to rotate agent key');
+        }
+        applyAgentOutput(data);
+    } catch (err) {
+        alert(err.message || 'Failed to rotate agent key');
     } finally {
         btn.disabled = false;
     }
