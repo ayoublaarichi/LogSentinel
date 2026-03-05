@@ -558,9 +558,69 @@ class TestSIEMFeatures:
         )
         assert create_r.status_code == 200
         body = create_r.json()
+        assert body.get("key_id")
         assert body.get("api_key")
         assert body.get("install_command")
         assert body.get("python_snippet")
+
+    def test_agents_rotate_api_key(self, client):
+        proj_r = client.get("/api/projects/")
+        assert proj_r.status_code == 200
+        projects = proj_r.json()
+        assert projects
+        pid = projects[0]["id"]
+
+        create_r = client.post(
+            "/api/agents/create",
+            json={"name": f"rotate-{uuid.uuid4().hex[:5]}", "project_id": pid},
+        )
+        assert create_r.status_code == 200
+        created = create_r.json()
+        old_key_id = created.get("key_id")
+        old_raw_key = created.get("api_key")
+        assert old_key_id
+        assert old_raw_key
+
+        before_rotate_ingest = client.post(
+            "/api/ingest/",
+            headers={"X-API-Key": old_raw_key},
+            json={
+                "log_type": "auth",
+                "filename": "agent-rotate-before.log",
+                "content": "Jan 10 12:34:56 host sshd[1234]: Failed password for root from 10.0.0.91 port 22 ssh2",
+            },
+        )
+        assert before_rotate_ingest.status_code == 200
+
+        rotate_r = client.post(f"/api/agents/keys/{old_key_id}/rotate")
+        assert rotate_r.status_code == 200
+        rotated = rotate_r.json()
+        new_raw_key = rotated.get("api_key")
+        assert rotated.get("rotated_from_key_id") == old_key_id
+        assert rotated.get("key_id")
+        assert new_raw_key
+
+        old_key_ingest = client.post(
+            "/api/ingest/",
+            headers={"X-API-Key": old_raw_key},
+            json={
+                "log_type": "auth",
+                "filename": "agent-rotate-old-key.log",
+                "content": "Jan 10 12:34:57 host sshd[1234]: Failed password for root from 10.0.0.92 port 22 ssh2",
+            },
+        )
+        assert old_key_ingest.status_code == 401
+
+        new_key_ingest = client.post(
+            "/api/ingest/",
+            headers={"X-API-Key": new_raw_key},
+            json={
+                "log_type": "auth",
+                "filename": "agent-rotate-new-key.log",
+                "content": "Jan 10 12:34:58 host sshd[1234]: Failed password for root from 10.0.0.93 port 22 ssh2",
+            },
+        )
+        assert new_key_ingest.status_code == 200
 
     def test_attack_graph_api(self, client):
         seed_r = client.post("/api/events/seed?count=4")

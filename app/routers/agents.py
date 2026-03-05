@@ -4,7 +4,7 @@ Agent installer router.
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_user
 from app.models import Project, User
-from app.services.api_key_service import generate_api_key
+from app.services.api_key_service import generate_api_key, rotate_agent_api_key
 from app.templating import templates
 
 router = APIRouter(tags=["Agents"])
@@ -74,9 +74,51 @@ def create_agent(
     )
 
     return {
+        "key_id": key_obj.id,
         "agent_name": name,
         "project_id": key_obj.project_id,
         "api_key": raw_key,
+        "install_command": install_command,
+        "python_snippet": python_snippet,
+    }
+
+
+@router.post("/api/agents/keys/{key_id}/rotate")
+def rotate_agent_key(
+    key_id: int,
+    request: Request,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        new_raw_key, old_key, new_key = rotate_agent_api_key(db, key_id=key_id, user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    base_url = str(request.base_url).rstrip("/")
+    agent_name = old_key.label.split(":", 1)[1] if ":" in old_key.label else "rotated-agent"
+    install_command = (
+        f"curl -s '{base_url}/api/agents/install.sh?key={quote(new_raw_key)}&name={quote(agent_name)}' | bash"
+    )
+    python_snippet = (
+        "import requests, socket\n\n"
+        f"requests.post(\n"
+        f"    \"{base_url}/api/ingest/\",\n"
+        f"    headers={{\"X-API-Key\": \"{new_raw_key}\"}},\n"
+        "    json={\n"
+        "        \"log_type\": \"auth\",\n"
+        "        \"filename\": \"agent.log\",\n"
+        "        \"content\": f\"Jan 10 12:34:56 {socket.gethostname()} sshd[1234]: Failed password for root from 10.0.0.99 port 22 ssh2\"\n"
+        "    }\n"
+        ")\n"
+    )
+
+    return {
+        "rotated_from_key_id": old_key.id,
+        "key_id": new_key.id,
+        "agent_name": agent_name,
+        "project_id": new_key.project_id,
+        "api_key": new_raw_key,
         "install_command": install_command,
         "python_snippet": python_snippet,
     }

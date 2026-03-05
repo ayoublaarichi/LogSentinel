@@ -138,6 +138,8 @@ The app will be available at **http://localhost:8000**
 | `GET` | `/api/alerts/?severity=...&rule_name=...&project_id=...` | List alerts (filtered; optional project scope) |
 | `GET` | `/api/alerts/stats` | Alert severity breakdown |
 | `GET` | `/api/graph?hours=24&project_id=...` | Attack graph nodes/edges for visualization |
+| `POST` | `/api/agents/create` | Create an agent key + installer command/snippet |
+| `POST` | `/api/agents/keys/{key_id}/rotate` | Rotate an active agent key (revokes old key, returns new key once) |
 | `POST` | `/api/cases` | Create a case |
 | `GET` | `/api/cases` | List cases (filter by `status`, `priority`, `project_id`) |
 | `GET` | `/api/cases/{id}` | Case details (linked alerts + notes) |

@@ -101,3 +101,38 @@ def list_user_keys(db: Session, user_id: int) -> list[ApiKey]:
         .order_by(ApiKey.created_at.desc())
         .all()
     )
+
+
+def get_user_api_key(db: Session, key_id: int, user_id: int) -> Optional[ApiKey]:
+    """Return a key owned by user, or None if not found."""
+    return (
+        db.query(ApiKey)
+        .filter(ApiKey.id == key_id, ApiKey.user_id == user_id)
+        .first()
+    )
+
+
+def rotate_agent_api_key(db: Session, key_id: int, user_id: int) -> tuple[str, ApiKey, ApiKey]:
+    """Rotate an active agent key by revoking it and issuing a replacement.
+
+    Returns (new_raw_key, old_key, new_key).
+    Raises ValueError when key does not exist, is revoked, or is not an agent key.
+    """
+    old_key = get_user_api_key(db, key_id, user_id)
+    if old_key is None:
+        raise ValueError("API key not found")
+    if old_key.revoked_at is not None:
+        raise ValueError("API key already revoked")
+    if not old_key.label.startswith("agent:"):
+        raise ValueError("Only agent keys can be rotated from this endpoint")
+
+    old_key.revoked_at = datetime.utcnow()
+    db.commit()
+
+    new_raw_key, new_key = generate_api_key(
+        db,
+        user_id=user_id,
+        label=old_key.label,
+        project_id=old_key.project_id,
+    )
+    return new_raw_key, old_key, new_key
