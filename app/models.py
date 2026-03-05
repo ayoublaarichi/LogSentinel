@@ -215,3 +215,56 @@ class AuditLog(Base):
     )
 
     project: Mapped[Optional["Project"]] = relationship(back_populates="audit_logs")
+
+
+class Case(Base):
+    __tablename__ = "cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open", index=True)
+    priority: Mapped[str] = mapped_column(String(32), nullable=False, default="medium", index=True)
+    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class CaseAlert(Base):
+    __tablename__ = "case_alerts"
+    __table_args__ = (UniqueConstraint("case_id", "alert_id", name="uq_case_alerts_case_alert"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    alert_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("alerts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class CaseNote(Base):
+    __tablename__ = "case_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    author: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )

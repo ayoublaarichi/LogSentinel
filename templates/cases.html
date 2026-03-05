@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}LogSentinel — Cases{% endblock %}
+{% block nav_cases %}active{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card bg-dark border-secondary mb-3">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-folder-plus text-info"></i>
+                <strong>Create Case</strong>
+            </div>
+            <div class="card-body">
+                <form id="caseCreateForm" class="d-grid gap-2">
+                    <input id="caseTitle" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Case title" required>
+                    <textarea id="caseDescription" class="form-control form-control-sm bg-dark text-light border-secondary" rows="2" placeholder="Description (optional)"></textarea>
+                    <select id="casePriority" class="form-select form-select-sm bg-dark text-light border-secondary">
+                        <option value="medium" selected>Priority: Medium</option>
+                        <option value="low">Priority: Low</option>
+                        <option value="high">Priority: High</option>
+                        <option value="critical">Priority: Critical</option>
+                    </select>
+                    <button class="btn btn-sm" style="background:rgba(77,158,255,0.12);color:var(--ls-accent);border:1px solid rgba(77,158,255,0.3)">
+                        <i class="bi bi-plus-circle me-1"></i>Create
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-collection text-info"></i>
+                <strong>Cases</strong>
+                <span id="caseCount" class="badge ms-2" style="font-size:0.68rem;background:rgba(255,255,255,0.06);border:1px solid var(--ls-border-2);color:var(--ls-text-muted)">…</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <select id="fStatus" class="form-select form-select-sm bg-dark text-light border-secondary">
+                            <option value="">All Status</option>
+                            <option value="open">Open</option>
+                            <option value="investigating">Investigating</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="false_positive">False Positive</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <select id="fPriority" class="form-select form-select-sm bg-dark text-light border-secondary">
+                            <option value="">All Priority</option>
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="casesList" class="d-grid gap-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card bg-dark border-secondary h-100">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-journal-richtext text-info"></i>
+                <strong>Case Details</strong>
+                <span id="caseHeader" class="small text-muted ms-auto">Select a case</span>
+            </div>
+            <div class="card-body" id="caseDetailBody">
+                <div class="small text-muted">Choose a case from the list.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedCaseId = null;
+
+function activeProjectId() {
+    return localStorage.getItem('ls_active_project_id') || '';
+}
+
+function withProjectParams(params) {
+    const pid = activeProjectId();
+    if (pid) params.set('project_id', pid);
+    return params;
+}
+
+function escHtml(v) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(String(v ?? '')));
+    return d.innerHTML;
+}
+
+function fmt(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString();
+}
+
+function investigateLink(ip) {
+    const pid = activeProjectId();
+    const suffix = pid ? `?project_id=${encodeURIComponent(pid)}` : '';
+    return `/investigate/ip/${encodeURIComponent(ip)}${suffix}`;
+}
+
+function graphLink() {
+    const pid = activeProjectId();
+    return pid ? `/graph?project_id=${encodeURIComponent(pid)}` : '/graph';
+}
+
+async function api(url, options = {}) {
+    const resp = await fetch(url, { credentials: 'same-origin', ...options });
+    if (resp.status === 401) {
+        window.location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+        throw new Error('unauthorized');
+    }
+    return resp;
+}
+
+async function loadCases() {
+    const params = withProjectParams(new URLSearchParams());
+    const status = document.getElementById('fStatus').value;
+    const priority = document.getElementById('fPriority').value;
+    if (status) params.set('status', status);
+    if (priority) params.set('priority', priority);
+
+    const resp = await api(`/api/cases?${params.toString()}`);
+    if (!resp.ok) return;
+    const rows = await resp.json();
+
+    document.getElementById('caseCount').textContent = String(rows.length);
+    const root = document.getElementById('casesList');
+    if (!rows.length) {
+        root.innerHTML = '<div class="small text-muted">No cases found.</div>';
+        document.getElementById('caseDetailBody').innerHTML = '<div class="small text-muted">Choose a case from the list.</div>';
+        return;
+    }
+
+    root.innerHTML = rows.map(c => `
+        <button class="btn btn-sm text-start ${selectedCaseId === c.id ? 'btn-outline-info' : 'btn-outline-secondary'}"
+                onclick="selectCase(${c.id})">
+            <div class="fw-semibold">${escHtml(c.title)}</div>
+            <div class="small text-muted">${escHtml(String(c.status).toUpperCase())} · ${escHtml(String(c.priority).toUpperCase())} · alerts ${c.alert_count}</div>
+        </button>
+    `).join('');
+
+    if (!selectedCaseId) {
+        selectCase(rows[0].id);
+    }
+}
+
+async function selectCase(caseId) {
+    selectedCaseId = caseId;
+    await loadCases();
+
+    const resp = await api(`/api/cases/${caseId}`);
+    if (!resp.ok) return;
+    const c = await resp.json();
+
+    document.getElementById('caseHeader').textContent = `Case #${c.id}`;
+    const alerts = c.linked_alerts || [];
+    const notes = c.notes || [];
+    const primaryIp = alerts.length ? alerts[0].source_ip : '';
+
+    document.getElementById('caseDetailBody').innerHTML = `
+        <div class="mb-3">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <h5 class="mb-0">${escHtml(c.title)}</h5>
+                <span class="badge" style="background:rgba(255,255,255,0.06);border:1px solid var(--ls-border-2)">${escHtml(String(c.status).toUpperCase())}</span>
+                <span class="badge" style="background:rgba(77,158,255,0.1);border:1px solid rgba(77,158,255,0.3);color:var(--ls-accent)">${escHtml(String(c.priority).toUpperCase())}</span>
+            </div>
+            <div class="small text-muted mb-2">Owner: ${escHtml(c.owner || '—')} · Updated: ${fmt(c.updated_at)}</div>
+            <div class="small">${escHtml(c.description || 'No description')}</div>
+        </div>
+
+        <div class="d-flex gap-2 mb-3">
+            <select id="caseStatusSel" class="form-select form-select-sm bg-dark text-light border-secondary" style="max-width:220px">
+                <option value="open" ${c.status === 'open' ? 'selected' : ''}>Open</option>
+                <option value="investigating" ${c.status === 'investigating' ? 'selected' : ''}>Investigating</option>
+                <option value="resolved" ${c.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                <option value="false_positive" ${c.status === 'false_positive' ? 'selected' : ''}>False Positive</option>
+            </select>
+            <button class="btn btn-sm btn-outline-info" onclick="updateCaseStatus(${c.id})">Update Status</button>
+            ${primaryIp ? `<a class="btn btn-sm btn-outline-secondary" href="${investigateLink(primaryIp)}">Timeline</a>` : ''}
+            <a class="btn btn-sm btn-outline-secondary" href="${graphLink()}">Attack Graph</a>
+            ${primaryIp ? `<button class="btn btn-sm btn-outline-warning" onclick="buildChain('${escHtml(primaryIp)}')">Build Chain</button>` : ''}
+        </div>
+
+        <div class="mb-3">
+            <div class="small text-muted mb-1">Link Alert to Case</div>
+            <div class="d-flex gap-2">
+                <input id="linkAlertId" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Alert ID">
+                <button class="btn btn-sm btn-outline-info" onclick="linkAlert(${c.id})">Link</button>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <div class="fw-semibold mb-1">Linked Alerts (${alerts.length})</div>
+            ${alerts.length ? alerts.map(a => `
+                <div class="small mb-1" style="border-bottom:1px solid var(--ls-border)">
+                    <span class="badge sev-${a.severity}">${escHtml(String(a.severity).toUpperCase())}</span>
+                    <span class="ms-1 text-mono">${escHtml(a.rule_name)}</span>
+                    <a class="ms-2" href="${investigateLink(a.source_ip)}">${escHtml(a.source_ip)}</a>
+                </div>
+            `).join('') : '<div class="small text-muted">No linked alerts.</div>'}
+        </div>
+
+        <div class="mb-2">
+            <div class="fw-semibold mb-1">Analyst Notes</div>
+            <div class="d-flex gap-2 mb-2">
+                <input id="newCaseNote" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Add investigation note">
+                <button class="btn btn-sm btn-outline-info" onclick="addNote(${c.id})">Add</button>
+            </div>
+            ${notes.length ? notes.map(n => `
+                <div class="small mb-2 p-2" style="background:rgba(255,255,255,0.03);border:1px solid var(--ls-border)">
+                    <div class="text-muted">${escHtml(n.author || 'analyst')} · ${fmt(n.created_at)}</div>
+                    <div>${escHtml(n.note)}</div>
+                </div>
+            `).join('') : '<div class="small text-muted">No notes yet.</div>'}
+        </div>
+
+        <div id="chainResult"></div>
+    `;
+}
+
+async function createCase(ev) {
+    ev.preventDefault();
+    const title = document.getElementById('caseTitle').value.trim();
+    if (!title) return;
+    const payload = {
+        title,
+        description: document.getElementById('caseDescription').value.trim(),
+        priority: document.getElementById('casePriority').value,
+    };
+    const pid = activeProjectId();
+    if (pid) payload.project_id = Number(pid);
+
+    const resp = await api('/api/cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!resp.ok) return;
+    const c = await resp.json();
+
+    document.getElementById('caseCreateForm').reset();
+    selectedCaseId = c.id;
+    await loadCases();
+    await selectCase(c.id);
+}
+
+async function updateCaseStatus(caseId) {
+    const status = document.getElementById('caseStatusSel').value;
+    const resp = await api(`/api/cases/${caseId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+    });
+    if (!resp.ok) return;
+    await selectCase(caseId);
+}
+
+async function addNote(caseId) {
+    const input = document.getElementById('newCaseNote');
+    const note = input.value.trim();
+    if (!note) return;
+
+    const resp = await api(`/api/cases/${caseId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+    });
+    if (!resp.ok) return;
+    input.value = '';
+    await selectCase(caseId);
+}
+
+async function linkAlert(caseId) {
+    const id = Number(document.getElementById('linkAlertId').value);
+    if (!id) return;
+
+    const resp = await api(`/api/cases/${caseId}/alerts/${id}`, { method: 'POST' });
+    if (!resp.ok) return;
+    document.getElementById('linkAlertId').value = '';
+    await selectCase(caseId);
+}
+
+async function buildChain(ip) {
+    const params = withProjectParams(new URLSearchParams({ ip, hours: '24' }));
+    const resp = await api(`/api/chains/build?${params.toString()}`);
+    if (!resp.ok) return;
+    const chain = await resp.json();
+
+    const phases = (chain.phases || []).map(p =>
+        `<div class="small mb-2"><strong>${escHtml(p.name)}</strong> (${p.score})<br>${(p.events || []).slice(0, 2).map(e => escHtml(e.message || '')).join('<br>')}</div>`
+    ).join('');
+
+    const el = document.getElementById('chainResult');
+    if (!el) return;
+    el.innerHTML = `
+        <div class="mt-3 p-2" style="background:rgba(188,140,255,0.08);border:1px solid rgba(188,140,255,0.3)">
+            <div class="fw-semibold">Attack Chain (${escHtml(chain.confidence)} confidence · score ${chain.score})</div>
+            <div class="small text-muted mb-2">${escHtml(chain.summary || '')}</div>
+            ${phases || '<div class="small text-muted">No phases detected.</div>'}
+        </div>
+    `;
+}
+
+document.getElementById('caseCreateForm').addEventListener('submit', createCase);
+document.getElementById('fStatus').addEventListener('change', loadCases);
+document.getElementById('fPriority').addEventListener('change', loadCases);
+const initialCase = Number(new URLSearchParams(window.location.search).get('case_id') || '0');
+if (initialCase) selectedCaseId = initialCase;
+loadCases();
+</script>
+{% endblock %}

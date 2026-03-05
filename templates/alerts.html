@@ -522,6 +522,12 @@ function renderDetail(a) {
                 <i class="bi bi-search me-1"></i>Investigate Timeline
             </a>
             <button class="btn btn-sm"
+                    onclick="createCaseFromAlert(${a.id}, '${escHtml(a.source_ip)}')"
+                    style="border:1px solid rgba(188,140,255,0.4);
+                           color:#bc8cff;background:rgba(188,140,255,0.08)">
+                <i class="bi bi-briefcase me-1"></i>Create Case
+            </button>
+            <button class="btn btn-sm"
                     onclick="ackAlert(${a.id})"
                     style="border:1px solid rgba(77,158,255,0.35);
                            color:var(--ls-accent);background:rgba(77,158,255,0.06)">
@@ -555,6 +561,39 @@ async function closeAlert(id) {
     await fetch(closeUrl, { method: 'POST', credentials: 'same-origin' });
     loadAlerts();
     loadStats();
+}
+
+async function createCaseFromAlert(alertId, sourceIp) {
+    const title = prompt('Case title:', `Investigation: ${sourceIp}`);
+    if (!title || !title.trim()) return;
+
+    const payload = {
+        title: title.trim(),
+        priority: 'high',
+        description: `Created from alert #${alertId}`,
+    };
+    const pid = activeProjectId();
+    if (pid) payload.project_id = Number(pid);
+
+    const createResp = await fetch('/api/cases', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!createResp.ok) {
+        alert('Failed to create case');
+        return;
+    }
+    const created = await createResp.json();
+
+    await fetch(`/api/cases/${created.id}/alerts/${alertId}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+    });
+
+    const caseUrl = `/cases?case_id=${encodeURIComponent(created.id)}`;
+    window.location.assign(caseUrl);
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

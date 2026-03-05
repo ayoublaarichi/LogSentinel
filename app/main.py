@@ -135,7 +135,7 @@ def options_fallback(path: str) -> Response:
 
 
 # ── Include routers ──────────────────────────────────────────────────────────
-from app.routers import agents, alerts, auth, events, graph, ingest, investigate, projects, search, settings, upload  # noqa: E402
+from app.routers import agents, alerts, auth, cases, chains, events, graph, ingest, investigate, projects, search, settings, upload  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(upload.router)
@@ -148,6 +148,8 @@ app.include_router(investigate.router)
 app.include_router(search.router)
 app.include_router(agents.router)
 app.include_router(graph.router)
+app.include_router(cases.router)
+app.include_router(chains.router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

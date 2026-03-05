@@ -538,3 +538,67 @@ class TestSIEMFeatures:
         page_r = client.get("/graph", headers={"Accept": "text/html"})
         assert page_r.status_code == 200
         assert "Attack Graph" in page_r.text
+
+    def test_cases_and_chain_workflow(self, client):
+        up_r = client.post(
+            "/api/upload/?log_type=auth",
+            files={
+                "file": (
+                    "case-chain-smoke.log",
+                    (
+                        "Jan 10 12:34:50 host sshd[1234]: Failed password for root from 10.0.0.88 port 22 ssh2\n"
+                        "Jan 10 12:34:52 host sshd[1234]: Failed password for root from 10.0.0.88 port 23 ssh2\n"
+                        "Jan 10 12:34:54 host sshd[1234]: Failed password for root from 10.0.0.88 port 24 ssh2\n"
+                        "Jan 10 12:34:56 host sshd[1234]: Failed password for root from 10.0.0.88 port 25 ssh2\n"
+                        "Jan 10 12:34:58 host sshd[1234]: Failed password for root from 10.0.0.88 port 26 ssh2\n"
+                        "Jan 10 12:35:05 host sshd[1234]: Accepted password for root from 10.0.0.88 port 22 ssh2\n"
+                        "Jan 10 12:35:20 host sudo: root : TTY=pts/0 ; PWD=/root ; USER=root ; COMMAND=/usr/bin/systemctl restart ssh\n"
+                    ).encode("utf-8"),
+                    "text/plain",
+                )
+            },
+        )
+        assert up_r.status_code == 200
+
+        create_case_r = client.post(
+            "/api/cases",
+            json={"title": "SSH brute force investigation", "priority": "high"},
+        )
+        assert create_case_r.status_code == 200
+        case_obj = create_case_r.json()
+        case_id = case_obj["id"]
+
+        alerts_r = client.get("/api/alerts/")
+        assert alerts_r.status_code == 200
+        target = next((a for a in alerts_r.json() if a.get("source_ip") == "10.0.0.88"), None)
+        assert target is not None
+
+        link_r = client.post(f"/api/cases/{case_id}/alerts/{target['id']}")
+        assert link_r.status_code == 200
+
+        status_r = client.post(f"/api/cases/{case_id}/status", json={"status": "investigating"})
+        assert status_r.status_code == 200
+        assert status_r.json().get("status") == "investigating"
+
+        note_r = client.post(
+            f"/api/cases/{case_id}/notes",
+            json={"note": "IP belongs to TOR exit node"},
+        )
+        assert note_r.status_code == 200
+
+        detail_r = client.get(f"/api/cases/{case_id}")
+        assert detail_r.status_code == 200
+        detail = detail_r.json()
+        assert isinstance(detail.get("linked_alerts"), list)
+        assert isinstance(detail.get("notes"), list)
+
+        cases_page_r = client.get("/cases", headers={"Accept": "text/html"})
+        assert cases_page_r.status_code == 200
+        assert "Cases" in cases_page_r.text
+
+        chain_r = client.get("/api/chains/build?ip=10.0.0.88&hours=24")
+        assert chain_r.status_code == 200
+        chain = chain_r.json()
+        assert "score" in chain
+        assert "phases" in chain
+        assert isinstance(chain["phases"], list)

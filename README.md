@@ -18,6 +18,8 @@ A portfolio-grade security operations tool built with **Python / FastAPI** that 
 | **Events Browser** | Paginated table with filters (IP, type, source, time range) |
 | **Live Refresh (MVP)** | Events stream via WebSocket; Dashboard/Alerts auto-refresh key data every 10s |
 | **Attack Graph** | Relationship graph (`IP ↔ event type ↔ users ↔ alert rules`) with click-through intel |
+| **Case Management** | Incident cases with status, priority, linked alerts, and analyst notes |
+| **Attack Chains** | Heuristic chain reconstruction (`Recon → Access → Privilege/Impact`) with confidence score |
 | **REST API** | Full JSON API at `/docs` (Swagger) and `/redoc` |
 
 ---
@@ -125,6 +127,13 @@ The app will be available at **http://localhost:8000**
 | `GET` | `/api/alerts/?severity=...&rule_name=...&project_id=...` | List alerts (filtered; optional project scope) |
 | `GET` | `/api/alerts/stats` | Alert severity breakdown |
 | `GET` | `/api/graph?hours=24&project_id=...` | Attack graph nodes/edges for visualization |
+| `POST` | `/api/cases` | Create a case |
+| `GET` | `/api/cases` | List cases (filter by `status`, `priority`, `project_id`) |
+| `GET` | `/api/cases/{id}` | Case details (linked alerts + notes) |
+| `POST` | `/api/cases/{id}/alerts/{alert_id}` | Link alert to case |
+| `POST` | `/api/cases/{id}/status` | Update case status |
+| `POST` | `/api/cases/{id}/notes` | Add analyst note |
+| `GET` | `/api/chains/build?ip=...&hours=24&project_id=...` | Build attack chain with score/confidence |
 | `DELETE` | `/api/alerts/{id}` | Dismiss an alert |
 
 Interactive docs: **http://localhost:8000/docs**
