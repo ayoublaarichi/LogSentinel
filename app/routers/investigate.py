@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -86,72 +87,80 @@ def investigate_ip_page(
     db: Session = Depends(get_db),
 ):
     """IP investigation page — timeline, alerts, threat intel, targeted users."""
-    project_filter = _resolve_project_filter(db, user, project_id)
+    try:
+        project_filter = _resolve_project_filter(db, user, project_id)
 
-    # Events for this IP (user-scoped)
-    events_q = db.query(LogEvent).filter(LogEvent.user_id == user.id, LogEvent.source_ip == ip)
-    alerts_q = db.query(Alert).filter(Alert.user_id == user.id, Alert.source_ip == ip)
-    usernames_q = (
-        db.query(LogEvent.username)
-        .filter(
-            LogEvent.user_id == user.id,
-            LogEvent.source_ip == ip,
-            LogEvent.username.isnot(None),
+        # Events for this IP (user-scoped)
+        events_q = db.query(LogEvent).filter(LogEvent.user_id == user.id, LogEvent.source_ip == ip)
+        alerts_q = db.query(Alert).filter(Alert.user_id == user.id, Alert.source_ip == ip)
+        usernames_q = (
+            db.query(LogEvent.username)
+            .filter(
+                LogEvent.user_id == user.id,
+                LogEvent.source_ip == ip,
+                LogEvent.username.isnot(None),
+            )
         )
-    )
-    if project_filter is not None:
-        events_q = events_q.filter(LogEvent.project_id == project_filter)
-        alerts_q = alerts_q.filter(Alert.project_id == project_filter)
-        usernames_q = usernames_q.filter(LogEvent.project_id == project_filter)
+        if project_filter is not None:
+            events_q = events_q.filter(LogEvent.project_id == project_filter)
+            alerts_q = alerts_q.filter(Alert.project_id == project_filter)
+            usernames_q = usernames_q.filter(LogEvent.project_id == project_filter)
 
-    events = (
-        events_q
-        .order_by(LogEvent.timestamp.asc())
-        .limit(500)
-        .all()
-    )
+        events = (
+            events_q
+            .order_by(LogEvent.timestamp.asc())
+            .limit(500)
+            .all()
+        )
 
-    # Alerts for this IP (user-scoped)
-    alerts = (
-        alerts_q
-        .order_by(Alert.created_at.desc())
-        .all()
-    )
+        alerts = (
+            alerts_q
+            .order_by(Alert.created_at.desc())
+            .all()
+        )
 
-    # Unique usernames targeted
-    usernames = usernames_q.distinct().all()
-    targeted_users = sorted([u[0] for u in usernames if u[0] and u[0] != "unknown"])
+        usernames = usernames_q.distinct().all()
+        targeted_users = sorted([u[0] for u in usernames if u[0] and u[0] != "unknown"])
+        intel = _safe_enrich_ip(db, ip)
 
-    # Threat intel
-    intel = _safe_enrich_ip(db, ip)
+        timeline_data = [
+            {
+                "ts": e.timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
+                "type": e.event_type,
+                "category": _categorize_event(e),
+                "raw": e.raw_line,
+                "source": e.log_source,
+            }
+            for e in events
+        ]
+        timeline_summary = _build_summary(timeline_data)
 
-    timeline_data = [
-        {
-            "ts": e.timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
-            "type": e.event_type,
-            "category": _categorize_event(e),
-            "raw": e.raw_line,
-            "source": e.log_source,
-        }
-        for e in events
-    ]
-    timeline_summary = _build_summary(timeline_data)
-
-    return templates.TemplateResponse(
-        "investigate_ip.html",
-        {
-            "request": request,
-            "user": user,
-            "ip": ip,
-            "events": events,
-            "alerts": alerts,
-            "targeted_users": targeted_users,
-            "intel": intel,
-            "timeline_data": timeline_data,
-            "timeline_summary": timeline_summary,
-            "active_project_id": project_filter,
-        },
-    )
+        return templates.TemplateResponse(
+            "investigate_ip.html",
+            {
+                "request": request,
+                "user": user,
+                "ip": ip,
+                "events": events,
+                "alerts": alerts,
+                "targeted_users": targeted_users,
+                "intel": intel,
+                "timeline_data": timeline_data,
+                "timeline_summary": timeline_summary,
+                "active_project_id": project_filter,
+            },
+        )
+    except Exception:
+        return HTMLResponse(
+            content=(
+                "<html><body style='font-family:system-ui;background:#0d1117;color:#c9d1d9;padding:24px'>"
+                "<h3>Investigation View Unavailable</h3>"
+                f"<p>Unable to render investigation details for <code>{ip}</code> right now.</p>"
+                "<p>Please retry in a moment.</p>"
+                "</body></html>"
+            ),
+            status_code=200,
+        )
 
 
 @router.get("/api/threat-intel/{ip}", tags=["Threat Intel"])
